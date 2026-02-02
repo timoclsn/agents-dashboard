@@ -6,6 +6,7 @@ export type AgentStatus = "idle" | "working";
 export interface Agent {
   target: string;
   session: string;
+  sessionId: number;
   window: number;
   pane: number;
   type: AgentType;
@@ -76,6 +77,7 @@ export const pollAgents = async (): Promise<Agent[]> => {
     agents.push({
       target,
       session: pane.session,
+      sessionId: pane.sessionId,
       window: pane.window,
       pane: pane.pane,
       type: agentType,
@@ -85,5 +87,5 @@ export const pollAgents = async (): Promise<Agent[]> => {
     });
   }
 
-  return agents.sort((a, b) => a.target.localeCompare(b.target));
+  return agents;
 };

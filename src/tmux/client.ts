@@ -5,6 +5,7 @@ const SEP = "|||";
 
 export interface PaneInfo {
   session: string;
+  sessionId: number;
   window: number;
   pane: number;
   title: string;
@@ -19,20 +20,32 @@ export const listPanes = async (): Promise<PaneInfo[]> => {
   try {
     await refreshProcessCache();
 
-    const format = `#{session_attached}${SEP}#{session_name}${SEP}#{window_index}${SEP}#{pane_index}${SEP}#{pane_title}${SEP}#{pane_current_command}${SEP}#{pane_current_path}${SEP}#{pane_pid}`;
+    const format = `#{session_attached}${SEP}#{session_id}${SEP}#{session_name}${SEP}#{window_index}${SEP}#{pane_index}${SEP}#{pane_title}${SEP}#{pane_current_command}${SEP}#{pane_current_path}${SEP}#{pane_pid}`;
     const result = await $`tmux list-panes -a -F ${format}`.text();
 
-    return result
+    const panes = result
       .trim()
       .split("\n")
       .filter((line) => line.length > 0)
       .map((line) => {
         const parts = line.split(SEP);
-        const [attached, session, window, pane, title, command, path, pidStr] =
-          parts;
+        const [
+          attached,
+          sessionId,
+          session,
+          window,
+          pane,
+          title,
+          command,
+          path,
+          pidStr,
+        ] = parts;
         const pid = parseInt(pidStr, 10) || 0;
+        // session_id is like "$1", "$3", etc - extract the number
+        const sessionIdNum = parseInt(sessionId.replace("$", ""), 10) || 0;
         return {
           session,
+          sessionId: sessionIdNum,
           window: parseInt(window, 10),
           pane: parseInt(pane, 10),
           title,
@@ -43,6 +56,13 @@ export const listPanes = async (): Promise<PaneInfo[]> => {
           attached: attached === "1",
         };
       });
+
+    // Sort by session creation order (session_id), then window, then pane
+    return panes.sort((a, b) => {
+      if (a.sessionId !== b.sessionId) return a.sessionId - b.sessionId;
+      if (a.window !== b.window) return a.window - b.window;
+      return a.pane - b.pane;
+    });
   } catch {
     return [];
   }
@@ -72,16 +92,16 @@ export const focusPane = async (target: string): Promise<void> => {
 export const debugListPanes = async (): Promise<void> => {
   await refreshProcessCache();
 
-  const format = `#{session_attached}${SEP}#{session_name}${SEP}#{window_index}${SEP}#{pane_index}${SEP}#{pane_title}${SEP}#{pane_current_command}${SEP}#{pane_current_path}${SEP}#{pane_pid}`;
+  const format = `#{session_attached}${SEP}#{session_id}${SEP}#{session_name}${SEP}#{window_index}${SEP}#{pane_index}${SEP}#{pane_title}${SEP}#{pane_current_command}${SEP}#{pane_current_path}${SEP}#{pane_pid}`;
   const result = await $`tmux list-panes -a -F ${format}`.text();
 
   const lines = result.trim().split("\n");
 
   for (const line of lines) {
     const parts = line.split(SEP);
-    if (parts.length < 8) continue;
+    if (parts.length < 9) continue;
 
-    const [attached, session, window, pane, title, command, , pidStr] = parts;
+    const [attached, , session, window, pane, title, command, , pidStr] = parts;
     const isAttached = attached === "1";
     const pid = parseInt(pidStr, 10) || 0;
     const childCommands = getChildCommands(pid);

@@ -22,6 +22,8 @@ const COLORS = {
 
 interface AgentGroup {
   title: string;
+  sessionId: number;
+  displayIndex: number;
   agents: Agent[];
 }
 
@@ -33,25 +35,34 @@ const getGroupTitle = (path: string): string => {
   return parts[parts.length - 1] || path;
 };
 
-const groupAgents = (agents: Agent[]): AgentGroup[] => {
-  const groups = new Map<string, Agent[]>();
+const groupAgents = (agents: Agent[], allAgents: Agent[]): AgentGroup[] => {
+  // Build sessionId to displayIndex mapping from all agents (not filtered)
+  const sessionIds = [...new Set(allAgents.map((a) => a.sessionId))].sort(
+    (a, b) => a - b,
+  );
+  const sessionIndexMap = new Map(sessionIds.map((id, i) => [id, i]));
+
+  const groups = new Map<string, { sessionId: number; agents: Agent[] }>();
 
   for (const agent of agents) {
     const title = getGroupTitle(agent.path);
-    const existing = groups.get(title) || [];
-    existing.push(agent);
-    groups.set(title, existing);
+    const existing = groups.get(title);
+    if (existing) {
+      existing.agents.push(agent);
+    } else {
+      groups.set(title, { sessionId: agent.sessionId, agents: [agent] });
+    }
   }
 
-  return Array.from(groups.entries())
-    .map(([title, agents]) => ({
-      title,
-      agents: agents.sort((a, b) => {
-        if (a.window !== b.window) return a.window - b.window;
-        return a.pane - b.pane;
-      }),
-    }))
-    .sort((a, b) => a.title.localeCompare(b.title));
+  return Array.from(groups.entries()).map(([title, { sessionId, agents }]) => ({
+    title,
+    sessionId,
+    displayIndex: sessionIndexMap.get(sessionId) ?? 0,
+    agents: agents.sort((a, b) => {
+      if (a.window !== b.window) return a.window - b.window;
+      return a.pane - b.pane;
+    }),
+  }));
 };
 
 const useSpinner = (active: boolean) => {
@@ -126,6 +137,9 @@ const SessionGroup = ({
   return (
     <box style={{ flexDirection: "column", marginTop: isFirst ? 0 : 1 }}>
       <box style={{ flexDirection: "row", height: 1 }}>
+        <text style={{ fg: COLORS.textSecondary }}>
+          ({group.displayIndex}){" "}
+        </text>
         <text style={{ fg: COLORS.text }}>{group.title}</text>
         {hasAttached && <text style={{ fg: COLORS.accent }}> ●</text>}
         {workingCount > 0 && (
@@ -230,7 +244,7 @@ export const App = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const renderer = useRenderer();
 
-  const allGroups = groupAgents(agents);
+  const allGroups = groupAgents(agents, agents);
   const groups = searchQuery
     ? allGroups.filter((g) =>
         g.title.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -251,6 +265,19 @@ export const App = () => {
   }, []);
 
   useKeyboard((key) => {
+    // Jump to tmux session by display index: 0-9 when search is empty
+    if (!searchQuery && key.name && /^[0-9]$/.test(key.name)) {
+      const targetDisplayIndex = parseInt(key.name, 10);
+      const targetGroup = allGroups.find(
+        (g) => g.displayIndex === targetDisplayIndex,
+      );
+      if (targetGroup && targetGroup.agents.length > 0) {
+        const firstAgent = targetGroup.agents[0];
+        focusPane(firstAgent.target);
+      }
+      return;
+    }
+
     // Navigation: arrow keys or ctrl+n/p
     if (key.name === "down" || (key.ctrl && key.name === "n")) {
       setSelectedIndex((i) => Math.min(i + 1, flatAgents.length - 1));
