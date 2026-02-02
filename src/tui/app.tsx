@@ -6,16 +6,15 @@ import { focusPane } from "../tmux/client";
 const POLL_INTERVAL = 500;
 const SPINNER_INTERVAL = 80;
 
-const SPINNER_FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
+const SPINNER_FRAMES = ["⣷", "⣯", "⣟", "⡿", "⢿", "⣻", "⣽", "⣾"];
 const IDLE_ICON = "•";
 
-// Color palette - readable with clear status distinction
 const COLORS = {
   bg: "transparent",
   bgSelected: "#2a2a4a",
   text: "#e2e2e2",
   textSecondary: "#a0a0a0",
-  working: "#4ade80",
+  working: "#818cf8",
   idle: "#e2e2e2",
   border: "#505050",
   accent: "#818cf8",
@@ -167,12 +166,13 @@ const Header = ({
 
 const Footer = () => (
   <box style={{ marginTop: 1, flexDirection: "row" }}>
+    <text style={{ fg: COLORS.textSecondary }}>type to filter </text>
     <text style={{ fg: COLORS.text }}>↑↓</text>
-    <text style={{ fg: COLORS.textSecondary }}> navigate </text>
+    <text style={{ fg: COLORS.textSecondary }}> nav </text>
     <text style={{ fg: COLORS.text }}>⏎</text>
     <text style={{ fg: COLORS.textSecondary }}> focus </text>
-    <text style={{ fg: COLORS.text }}>q</text>
-    <text style={{ fg: COLORS.textSecondary }}> quit</text>
+    <text style={{ fg: COLORS.text }}>esc</text>
+    <text style={{ fg: COLORS.textSecondary }}> clear/quit</text>
   </box>
 );
 
@@ -185,12 +185,54 @@ const EmptyState = () => (
   </box>
 );
 
+const CURSOR_FRAMES = ["▏", "▎", "▍", "▌", "▍", "▎"];
+const CURSOR_INTERVAL = 200;
+
+const useCursor = () => {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame((f) => (f + 1) % CURSOR_FRAMES.length);
+    }, CURSOR_INTERVAL);
+    return () => clearInterval(interval);
+  }, []);
+
+  return CURSOR_FRAMES[frame];
+};
+
+interface SearchFieldProps {
+  value: string;
+}
+
+const SearchField = ({ value }: SearchFieldProps) => {
+  const cursor = useCursor();
+  const hasValue = value.length > 0;
+
+  return (
+    <box style={{ flexDirection: "row", height: 1, marginBottom: 1 }}>
+      <text style={{ fg: hasValue ? COLORS.accent : COLORS.border }}>❯ </text>
+      {!hasValue && <text style={{ fg: COLORS.textSecondary }}>{cursor}</text>}
+      <text style={{ fg: hasValue ? COLORS.text : COLORS.border }}>
+        {hasValue ? value : "filter"}
+      </text>
+      {hasValue && <text style={{ fg: COLORS.accent }}>{cursor}</text>}
+    </box>
+  );
+};
+
 export const App = () => {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
   const renderer = useRenderer();
 
-  const groups = groupAgents(agents);
+  const allGroups = groupAgents(agents);
+  const groups = searchQuery
+    ? allGroups.filter((g) =>
+        g.title.toLowerCase().includes(searchQuery.toLowerCase()),
+      )
+    : allGroups;
   const flatAgents = groups.flatMap((g) => g.agents);
   const workingCount = agents.filter((a) => a.status === "working").length;
 
@@ -206,31 +248,46 @@ export const App = () => {
   }, []);
 
   useKeyboard((key) => {
-    switch (key.name) {
-      case "j":
-      case "down":
-        setSelectedIndex((i) => Math.min(i + 1, flatAgents.length - 1));
-        break;
-      case "k":
-      case "up":
-        setSelectedIndex((i) => Math.max(i - 1, 0));
-        break;
-      case "return": {
-        const agent = flatAgents[selectedIndex];
-        if (agent) {
-          focusPane(agent.target);
-        }
-        break;
-      }
-      case "q":
-      case "escape":
+    // Navigation: arrow keys or ctrl+n/p
+    if (key.name === "down" || (key.ctrl && key.name === "n")) {
+      setSelectedIndex((i) => Math.min(i + 1, flatAgents.length - 1));
+      return;
+    }
+    if (key.name === "up" || (key.ctrl && key.name === "p")) {
+      setSelectedIndex((i) => Math.max(i - 1, 0));
+      return;
+    }
+
+    // Actions
+    if (key.name === "return") {
+      const agent = flatAgents[selectedIndex];
+      if (agent) focusPane(agent.target);
+      return;
+    }
+    if (key.name === "escape") {
+      if (searchQuery) {
+        setSearchQuery("");
+      } else {
         renderer.destroy();
         process.exit(0);
+      }
+      return;
+    }
+
+    // Search input
+    if (key.name === "backspace") {
+      setSearchQuery((q) => q.slice(0, -1));
+      return;
+    }
+    if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+      setSearchQuery((q) => q + key.sequence);
     }
   });
 
   useEffect(() => {
-    if (selectedIndex >= flatAgents.length && flatAgents.length > 0) {
+    if (flatAgents.length === 0) {
+      setSelectedIndex(0);
+    } else if (selectedIndex >= flatAgents.length) {
       setSelectedIndex(flatAgents.length - 1);
     }
   }, [flatAgents.length, selectedIndex]);
@@ -248,9 +305,14 @@ export const App = () => {
   return (
     <box style={{ flexDirection: "column", padding: 1, height: "100%" }}>
       <Header count={agents.length} workingCount={workingCount} />
+      <SearchField value={searchQuery} />
 
       {agents.length === 0 ? (
         <EmptyState />
+      ) : groups.length === 0 ? (
+        <box style={{ marginTop: 1 }}>
+          <text style={{ fg: COLORS.textSecondary }}>No matches</text>
+        </box>
       ) : (
         <scrollbox
           focused
