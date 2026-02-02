@@ -75,12 +75,15 @@ interface AgentRowProps {
   onClick: () => void;
 }
 
+const AGENT_TYPE_WIDTH = 8; // "opencode" is the longest
+
 const AgentRow = ({ agent, selected, isLast, onClick }: AgentRowProps) => {
   const paneRef = `${agent.window}.${agent.pane}`;
   const isWorking = agent.status === "working";
   const icon = useSpinner(isWorking);
 
   const treeChar = isLast ? "└" : "├";
+  const paddedType = agent.type.padEnd(AGENT_TYPE_WIDTH);
 
   return (
     <box
@@ -95,7 +98,7 @@ const AgentRow = ({ agent, selected, isLast, onClick }: AgentRowProps) => {
         {icon}
       </text>
       <text> </text>
-      <text style={{ fg: COLORS.text }}>{agent.type}</text>
+      <text style={{ fg: COLORS.text }}>{paddedType}</text>
       <text style={{ fg: COLORS.textSecondary }}> {paneRef}</text>
       {selected && <text style={{ fg: COLORS.accent }}> ◀</text>}
     </box>
