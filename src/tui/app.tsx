@@ -341,6 +341,7 @@ export const App = ({ forceLoading = false }: AppProps) => {
   useEffect(() => {
     let cancelled = false;
     let pollId = 0;
+    let initialSelectionSet = false;
 
     // Allow overlapping polls, but only apply the latest result.
     const poll = async () => {
@@ -350,6 +351,17 @@ export const App = ({ forceLoading = false }: AppProps) => {
         if (!cancelled && id === pollId) {
           setAgents(result);
           setDataLoaded(true);
+
+          // Set initial cursor to attached session on first load
+          if (!initialSelectionSet && result.length > 0) {
+            initialSelectionSet = true;
+            const groups = groupAgents(result, result);
+            const flat = groups.flatMap((g) => g.agents);
+            const attachedIndex = flat.findIndex((a) => a.attached);
+            if (attachedIndex !== -1) {
+              setSelectedIndex(attachedIndex);
+            }
+          }
         }
       } catch {}
     };
