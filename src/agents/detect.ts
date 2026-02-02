@@ -12,15 +12,24 @@ export interface Agent {
   type: AgentType;
   status: AgentStatus;
   path: string;
+  gitBranch: string | null;
   attached: boolean;
 }
-import { listPanes, capturePane } from "../tmux/client";
+import { listPanes, capturePane, getGitBranch } from "../tmux/client";
 import { detectClaude, detectClaudeStatus } from "./claude";
 import { detectCodex, detectCodexStatus } from "./codex";
 import { detectOpenCode, detectOpenCodeStatus } from "./opencode";
 
 // Fallback prompt patterns for all agents
 const FALLBACK_PROMPTS = [/❯\s*$/m, /›\s*$/m, /^>\s*$/m, /\$\s*$/m];
+const GIT_BRANCH_TTL_MS = 5_000;
+
+interface GitBranchCacheEntry {
+  value: string | null;
+  updatedAt: number;
+}
+
+const gitBranchCache = new Map<string, GitBranchCacheEntry>();
 
 const detectAgentType = (pane: PaneInfo): AgentType | null => {
   if (detectClaude(pane)) return "claude";
@@ -67,10 +76,29 @@ export const pollAgents = async (): Promise<Agent[]> => {
   const panes = await listPanes();
   const agents: Agent[] = [];
 
-  for (const pane of panes) {
-    const agentType = detectAgentType(pane);
-    if (!agentType) continue;
+  const agentPanes = panes.filter((pane) => detectAgentType(pane) !== null);
 
+  const uniquePaths = [...new Set(agentPanes.map((p) => p.path))];
+  const branchMap = new Map<string, string | null>();
+  const now = Date.now();
+  const pathsToRefresh = uniquePaths.filter((path) => {
+    const cached = gitBranchCache.get(path);
+    if (!cached) return true;
+    if (now - cached.updatedAt >= GIT_BRANCH_TTL_MS) return true;
+    branchMap.set(path, cached.value);
+    return false;
+  });
+
+  await Promise.all(
+    pathsToRefresh.map(async (path) => {
+      const value = await getGitBranch(path);
+      gitBranchCache.set(path, { value, updatedAt: Date.now() });
+      branchMap.set(path, value);
+    }),
+  );
+
+  for (const pane of agentPanes) {
+    const agentType = detectAgentType(pane)!;
     const target = `${pane.session}:${pane.window}.${pane.pane}`;
     const content = await capturePane(target);
 
@@ -83,6 +111,7 @@ export const pollAgents = async (): Promise<Agent[]> => {
       type: agentType,
       status: detectStatus(pane, content, agentType),
       path: pane.path,
+      gitBranch: branchMap.get(pane.path) ?? null,
       attached: pane.attached,
     });
   }

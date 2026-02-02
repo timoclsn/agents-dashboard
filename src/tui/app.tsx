@@ -27,6 +27,7 @@ interface AgentGroup {
   title: string;
   sessionId: number;
   displayIndex: number;
+  gitBranch: string | null;
   agents: Agent[];
 }
 
@@ -38,6 +39,13 @@ const getGroupTitle = (path: string): string => {
   return parts[parts.length - 1] || path;
 };
 
+const MAX_BRANCH_LENGTH = 20;
+
+const truncateBranch = (branch: string): string => {
+  if (branch.length <= MAX_BRANCH_LENGTH) return branch;
+  return branch.slice(0, MAX_BRANCH_LENGTH - 1) + "…";
+};
+
 const groupAgents = (agents: Agent[], allAgents: Agent[]): AgentGroup[] => {
   // Build sessionId to displayIndex mapping from all agents (not filtered)
   const sessionIds = [...new Set(allAgents.map((a) => a.sessionId))].sort(
@@ -45,7 +53,10 @@ const groupAgents = (agents: Agent[], allAgents: Agent[]): AgentGroup[] => {
   );
   const sessionIndexMap = new Map(sessionIds.map((id, i) => [id, i]));
 
-  const groups = new Map<string, { sessionId: number; agents: Agent[] }>();
+  const groups = new Map<
+    string,
+    { sessionId: number; gitBranch: string | null; agents: Agent[] }
+  >();
 
   for (const agent of agents) {
     const title = getGroupTitle(agent.path);
@@ -53,19 +64,26 @@ const groupAgents = (agents: Agent[], allAgents: Agent[]): AgentGroup[] => {
     if (existing) {
       existing.agents.push(agent);
     } else {
-      groups.set(title, { sessionId: agent.sessionId, agents: [agent] });
+      groups.set(title, {
+        sessionId: agent.sessionId,
+        gitBranch: agent.gitBranch,
+        agents: [agent],
+      });
     }
   }
 
-  return Array.from(groups.entries()).map(([title, { sessionId, agents }]) => ({
-    title,
-    sessionId,
-    displayIndex: sessionIndexMap.get(sessionId) ?? 0,
-    agents: agents.sort((a, b) => {
-      if (a.window !== b.window) return a.window - b.window;
-      return a.pane - b.pane;
+  return Array.from(groups.entries()).map(
+    ([title, { sessionId, gitBranch, agents }]) => ({
+      title,
+      sessionId,
+      displayIndex: sessionIndexMap.get(sessionId) ?? 0,
+      gitBranch,
+      agents: agents.sort((a, b) => {
+        if (a.window !== b.window) return a.window - b.window;
+        return a.pane - b.pane;
+      }),
     }),
-  }));
+  );
 };
 
 const useSpinner = (active: boolean) => {
@@ -144,11 +162,16 @@ const SessionGroup = ({
           ({group.displayIndex}){" "}
         </text>
         <text style={{ fg: COLORS.text }}>{group.title}</text>
+        {group.gitBranch && (
+          <text style={{ fg: COLORS.textSecondary }}>
+            :{truncateBranch(group.gitBranch)}
+          </text>
+        )}
         {hasAttached && <text style={{ fg: COLORS.accent }}> ●</text>}
         {workingCount > 0 && (
           <text style={{ fg: COLORS.textSecondary }}>
             {" "}
-            ({workingCount} active)
+            ({workingCount} working)
           </text>
         )}
       </box>
@@ -181,7 +204,7 @@ const Header = ({ count, workingCount, isLoading }: HeaderProps) => (
       <text style={{ fg: COLORS.textSecondary }}>
         {" "}
         {count} running
-        {workingCount > 0 && ` · ${workingCount} active`}
+        {workingCount > 0 && ` · ${workingCount} working`}
       </text>
     )}
   </box>
@@ -254,7 +277,7 @@ const LoadingState = () => {
     <box style={{ flexDirection: "column", flexGrow: 1 }}>
       <box style={{ flexDirection: "row", height: 1 }}>
         <text style={{ fg: COLORS.accent }}>{RADAR_FRAMES[radarFrame]} </text>
-        <text style={{ fg: COLORS.text }}>Scanning tmux sessions</text>
+        <text style={{ fg: COLORS.text }}>Summoning the agents</text>
         <text style={{ fg: COLORS.textSecondary, width: 4 }}>{dotStr}</text>
       </box>
       <box style={{ flexDirection: "row", height: 1, marginTop: 1 }}>

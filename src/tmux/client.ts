@@ -76,6 +76,15 @@ export const capturePane = async (target: string): Promise<string> => {
   }
 };
 
+export const getGitBranch = async (path: string): Promise<string | null> => {
+  try {
+    const branch = await $`git -C ${path} rev-parse --abbrev-ref HEAD`.text();
+    return branch.trim() || null;
+  } catch {
+    return null;
+  }
+};
+
 export const focusPane = async (target: string): Promise<void> => {
   try {
     await $`tmux display-popup -C`.quiet();
