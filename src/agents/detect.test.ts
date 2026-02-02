@@ -6,12 +6,13 @@ import type { PaneInfo } from "../tmux/client";
 
 const mockPane = (childCommands: string[]): PaneInfo => ({
   session: "test",
-  window: "1",
-  pane: "1",
+  sessionId: 1,
+  window: 1,
+  pane: 1,
   title: "test",
   command: "zsh",
   path: "/tmp",
-  pid: "1234",
+  pid: 1234,
   attached: false,
   childCommands,
 });

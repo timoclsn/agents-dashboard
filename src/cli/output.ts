@@ -61,9 +61,18 @@ export const runCli = async ({ watch = false, debug = false }: CliOptions) => {
   if (watch) {
     console.log("\nWatching for changes (Ctrl+C to exit)...\n");
 
-    setInterval(async () => {
-      const updated = await pollAgents();
-      printAgents(updated);
+    let pollId = 0;
+    // Allow overlapping polls, but only apply the latest result.
+    const interval = setInterval(() => {
+      const id = ++pollId;
+      pollAgents()
+        .then((updated) => {
+          if (id === pollId) {
+            printAgents(updated);
+          }
+        })
+        .catch(() => {});
     }, 1000);
+    void interval;
   }
 };

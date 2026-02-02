@@ -254,14 +254,27 @@ export const App = () => {
   const workingCount = agents.filter((a) => a.status === "working").length;
 
   useEffect(() => {
+    let cancelled = false;
+    let pollId = 0;
+
+    // Allow overlapping polls, but only apply the latest result.
     const poll = async () => {
-      const result = await pollAgents();
-      setAgents(result);
+      const id = ++pollId;
+      try {
+        const result = await pollAgents();
+        if (!cancelled && id === pollId) {
+          setAgents(result);
+        }
+      } catch {
+      }
     };
 
     poll();
     const interval = setInterval(poll, POLL_INTERVAL);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   useKeyboard((key) => {
