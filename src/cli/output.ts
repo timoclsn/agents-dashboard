@@ -25,7 +25,7 @@ const formatAgent = (agent: Agent): string => {
   const project = agent.path.split("/").pop() || agent.path;
   const title = agent.sessionTitle
     ? truncate(agent.sessionTitle, 30)
-    : "[Empty session]";
+    : "untitled";
 
   return `${attachedIcon} ${statusIcon} ${typeIcon} ${agent.type.padEnd(8)}  ${agent.target.padEnd(20)}  ${project}  ${title}`;
 };

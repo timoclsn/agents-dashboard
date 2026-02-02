@@ -109,6 +109,14 @@ export const focusPane = async (target: string): Promise<void> => {
   }
 };
 
+export const sendKeys = async (target: string, keys: string): Promise<void> => {
+  try {
+    await $`tmux send-keys -t ${target} ${keys}`.quiet();
+  } catch {
+    // Ignore errors
+  }
+};
+
 export const debugListPanes = async (): Promise<void> => {
   await refreshProcessCache();
 

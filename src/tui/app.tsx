@@ -1,28 +1,28 @@
 import { useState, useEffect } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { pollAgents, type Agent } from "../agents/detect";
-import { focusPane } from "../tmux/client";
+import { focusPane, sendKeys } from "../tmux/client";
 
 const POLL_INTERVAL = 500;
 const SPINNER_INTERVAL = 80;
 const LOADER_INTERVAL = 120;
 const MIN_LOADER_DURATION = 1000;
+const STAGGER_DELAY = 50;
 
 const SPINNER_FRAMES = ["⣷", "⣯", "⣟", "⡿", "⢿", "⣻", "⣽", "⣾"];
 const IDLE_ICON = "•";
 
 const COLORS = {
   bg: "transparent",
-  bgSelected: "#2a2a4a",
   text: "#e2e2e2",
   textSecondary: "#a0a0a0",
   working: "#818cf8",
   idle: "#e2e2e2",
-  border: "#505050",
+  border: "#606060",
+  borderDim: "#484848",
   accent: "#818cf8",
-  accentSecondary: "#6366b0",
-  accentBorder: "#4a4d80",
-  loaderDim: "#3a3a5a",
+  accentDim: "#6b70b0",
+  loaderDim: "#505070",
 };
 
 interface AgentGroup {
@@ -102,6 +102,42 @@ const useSpinner = (active: boolean) => {
   return active ? SPINNER_FRAMES[frame] : IDLE_ICON;
 };
 
+const useStaggeredReveal = (totalItems: number, shouldAnimate: boolean) => {
+  const [visibleCount, setVisibleCount] = useState(0);
+  const [hasAnimated, setHasAnimated] = useState(false);
+
+  useEffect(() => {
+    // Already animated - show all items immediately
+    if (hasAnimated) {
+      setVisibleCount(totalItems);
+      return;
+    }
+
+    // Not yet triggered - wait
+    if (!shouldAnimate) return;
+
+    // Run the staggered animation
+    if (totalItems === 0) {
+      setHasAnimated(true);
+      return;
+    }
+
+    let count = 0;
+    const interval = setInterval(() => {
+      count++;
+      setVisibleCount(count);
+      if (count >= totalItems) {
+        clearInterval(interval);
+        setHasAnimated(true);
+      }
+    }, STAGGER_DELAY);
+
+    return () => clearInterval(interval);
+  }, [shouldAnimate, totalItems, hasAnimated]);
+
+  return visibleCount;
+};
+
 interface AgentRowProps {
   agent: Agent;
   selected: boolean;
@@ -109,7 +145,6 @@ interface AgentRowProps {
   onClick: () => void;
 }
 
-const AGENT_TYPE_WIDTH = 8; // "opencode" is the longest
 const MAX_SESSION_TITLE_LENGTH = 40;
 
 const truncateSessionTitle = (title: string): string => {
@@ -123,14 +158,13 @@ const AgentRow = ({ agent, selected, isLast, onClick }: AgentRowProps) => {
   const icon = useSpinner(isWorking);
 
   const treeChar = isLast ? "└" : "├";
-  const paddedType = agent.type.padEnd(AGENT_TYPE_WIDTH);
 
-  // When selected, use accent shades matching the normal hierarchy
-  const textColor = selected ? COLORS.accent : COLORS.text;
-  const secondaryColor = selected
-    ? COLORS.accentSecondary
-    : COLORS.textSecondary;
-  const borderColor = selected ? COLORS.accentBorder : COLORS.border;
+  // Left-border indicator for selection
+  const selectionIndicator = selected ? "▌" : " ";
+
+  const title = agent.sessionTitle
+    ? truncateSessionTitle(agent.sessionTitle)
+    : "untitled";
 
   return (
     <box
@@ -140,27 +174,22 @@ const AgentRow = ({ agent, selected, isLast, onClick }: AgentRowProps) => {
         flexDirection: "row",
       }}
     >
-      <text style={{ fg: borderColor }}>{treeChar}─ </text>
+      <text style={{ fg: selected ? COLORS.accent : "transparent" }}>
+        {selectionIndicator}
+      </text>
+      <text style={{ fg: COLORS.borderDim }}>{treeChar}─</text>
       <text
         style={{
-          fg: isWorking
-            ? COLORS.working
-            : selected
-              ? COLORS.accent
-              : COLORS.idle,
+          fg: isWorking ? COLORS.working : COLORS.text,
           width: 2,
         }}
       >
         {icon}
       </text>
-      <text> </text>
-      <text style={{ fg: textColor }}>{paddedType}</text>
-      <text style={{ fg: secondaryColor }}>{`  ${paneRef}  `}</text>
-      <text style={{ fg: secondaryColor }}>
-        {agent.sessionTitle
-          ? truncateSessionTitle(agent.sessionTitle)
-          : "[Empty session]"}
-      </text>
+      <text style={{ fg: COLORS.text }}>{title}</text>
+      <text style={{ fg: COLORS.border }}> · </text>
+      <text style={{ fg: COLORS.textSecondary }}>{agent.type}</text>
+      <text style={{ fg: COLORS.borderDim }}>{`  ${paneRef}`}</text>
     </box>
   );
 };
@@ -186,9 +215,8 @@ const SessionGroup = ({
   return (
     <box style={{ flexDirection: "column", marginTop: isFirst ? 0 : 1 }}>
       <box style={{ flexDirection: "row", height: 1 }}>
-        <text style={{ fg: COLORS.textSecondary }}>
-          ({group.displayIndex}){" "}
-        </text>
+        <text style={{ fg: COLORS.border }}>{group.displayIndex} </text>
+        {hasAttached && <text style={{ fg: COLORS.accent }}>● </text>}
         {group.title.includes("/") ? (
           <>
             <text style={{ fg: COLORS.textSecondary }}>
@@ -202,16 +230,12 @@ const SessionGroup = ({
           <text style={{ fg: COLORS.text }}>{group.title}</text>
         )}
         {group.gitBranch && (
-          <text style={{ fg: COLORS.textSecondary }}>
+          <text style={{ fg: COLORS.border }}>
             :{truncateBranch(group.gitBranch)}
           </text>
         )}
-        {hasAttached && <text style={{ fg: COLORS.accent }}> ●</text>}
         {workingCount > 0 && (
-          <text style={{ fg: COLORS.textSecondary }}>
-            {" "}
-            ({workingCount} working)
-          </text>
+          <text style={{ fg: COLORS.accentDim }}> {workingCount} working</text>
         )}
       </box>
       <box style={{ flexDirection: "column" }}>
@@ -237,58 +261,64 @@ interface HeaderProps {
 
 const Header = ({ count, workingCount, isLoading }: HeaderProps) => (
   <box style={{ marginBottom: 1, flexDirection: "row", height: 1 }}>
-    <text style={{ fg: COLORS.accent }}>◈</text>
-    <text style={{ fg: COLORS.text }}> agents</text>
+    <text style={{ fg: COLORS.accent }}>◈ </text>
+    <text style={{ fg: COLORS.text }}>agents</text>
     {!isLoading && (
-      <text style={{ fg: COLORS.textSecondary }}>
-        {" "}
-        {count} running
-        {workingCount > 0 && ` · ${workingCount} working`}
-      </text>
+      <>
+        <text style={{ fg: COLORS.border }}> {count}</text>
+        {workingCount > 0 && (
+          <>
+            <text style={{ fg: COLORS.borderDim }}> · </text>
+            <text style={{ fg: COLORS.accentDim }}>{workingCount} working</text>
+          </>
+        )}
+      </>
     )}
   </box>
 );
 
 const Footer = () => (
   <box style={{ marginTop: 1, flexDirection: "row" }}>
-    <text style={{ fg: COLORS.textSecondary }}>type to filter </text>
-    <text style={{ fg: COLORS.text }}>↑↓</text>
-    <text style={{ fg: COLORS.textSecondary }}> nav </text>
-    <text style={{ fg: COLORS.text }}>⏎</text>
-    <text style={{ fg: COLORS.textSecondary }}> focus </text>
-    <text style={{ fg: COLORS.text }}>esc</text>
-    <text style={{ fg: COLORS.textSecondary }}> clear/quit</text>
+    <text style={{ fg: COLORS.border }}>↑↓</text>
+    <text style={{ fg: COLORS.textSecondary }}> nav</text>
+    <text style={{ fg: COLORS.borderDim }}> · </text>
+    <text style={{ fg: COLORS.border }}>⏎</text>
+    <text style={{ fg: COLORS.textSecondary }}> focus</text>
+    <text style={{ fg: COLORS.borderDim }}> · </text>
+    <text style={{ fg: COLORS.border }}>^x</text>
+    <text style={{ fg: COLORS.textSecondary }}> kill</text>
+    <text style={{ fg: COLORS.borderDim }}> · </text>
+    <text style={{ fg: COLORS.border }}>esc</text>
+    <text style={{ fg: COLORS.textSecondary }}> quit</text>
   </box>
 );
 
 const EmptyState = () => (
   <box style={{ flexDirection: "column", marginTop: 1 }}>
     <text style={{ fg: COLORS.textSecondary }}>No agents running</text>
-    <text style={{ fg: COLORS.textSecondary }}>
-      Start a Claude, Codex, or OpenCode session in tmux
-    </text>
+    <box style={{ flexDirection: "row", height: 1, marginTop: 1 }}>
+      <text style={{ fg: COLORS.borderDim }}>└ </text>
+      <text style={{ fg: COLORS.border }}>
+        start claude, codex, or opencode in tmux
+      </text>
+    </box>
   </box>
 );
 
-const SCAN_FRAMES = [
-  "▰▱▱▱▱▱▱▱",
-  "▰▰▱▱▱▱▱▱",
-  "▱▰▰▱▱▱▱▱",
-  "▱▱▰▰▱▱▱▱",
-  "▱▱▱▰▰▱▱▱",
-  "▱▱▱▱▰▰▱▱",
-  "▱▱▱▱▱▰▰▱",
-  "▱▱▱▱▱▱▰▰",
-  "▱▱▱▱▱▱▱▰",
-  "▱▱▱▱▱▱▱▱",
-];
+const SCAN_WIDTH = 24;
+const SCAN_FRAMES = Array.from({ length: SCAN_WIDTH + 2 }, (_, i) => {
+  const pos = i - 1;
+  return Array.from({ length: SCAN_WIDTH }, (_, j) => {
+    if (j === pos || j === pos + 1) return "━";
+    return "─";
+  }).join("");
+});
 
 const RADAR_FRAMES = ["◜", "◝", "◞", "◟"];
 
 const LoadingState = () => {
   const [scanFrame, setScanFrame] = useState(0);
   const [radarFrame, setRadarFrame] = useState(0);
-  const [dots, setDots] = useState(0);
 
   useEffect(() => {
     const scanInterval = setInterval(() => {
@@ -299,35 +329,38 @@ const LoadingState = () => {
       setRadarFrame((f) => (f + 1) % RADAR_FRAMES.length);
     }, 100);
 
-    const dotsInterval = setInterval(() => {
-      setDots((d) => (d + 1) % 4);
-    }, 400);
-
     return () => {
       clearInterval(scanInterval);
       clearInterval(radarInterval);
-      clearInterval(dotsInterval);
     };
   }, []);
 
-  const dotStr = ".".repeat(dots);
+  const scanLine = SCAN_FRAMES[scanFrame];
+  const highlightPos = scanFrame - 1;
 
   return (
     <box style={{ flexDirection: "column", flexGrow: 1 }}>
       <box style={{ flexDirection: "row", height: 1 }}>
         <text style={{ fg: COLORS.accent }}>{RADAR_FRAMES[radarFrame]} </text>
         <text style={{ fg: COLORS.text }}>Summoning the agents</text>
-        <text style={{ fg: COLORS.textSecondary, width: 4 }}>{dotStr}</text>
       </box>
       <box style={{ flexDirection: "row", height: 1, marginTop: 1 }}>
-        <text style={{ fg: COLORS.loaderDim }}> </text>
-        <text style={{ fg: COLORS.accent }}>{SCAN_FRAMES[scanFrame]}</text>
-      </box>
-      <box style={{ flexDirection: "row", height: 1, marginTop: 1 }}>
-        <text style={{ fg: COLORS.border }}> ╰─ </text>
-        <text style={{ fg: COLORS.textSecondary }}>
-          detecting agent processes
+        <text style={{ fg: COLORS.borderDim }}>
+          {scanLine.slice(0, Math.max(0, highlightPos))}
         </text>
+        <text style={{ fg: COLORS.accent }}>
+          {scanLine.slice(
+            Math.max(0, highlightPos),
+            Math.min(SCAN_WIDTH, highlightPos + 2),
+          )}
+        </text>
+        <text style={{ fg: COLORS.borderDim }}>
+          {scanLine.slice(Math.min(SCAN_WIDTH, highlightPos + 2))}
+        </text>
+      </box>
+      <box style={{ flexDirection: "row", height: 1, marginTop: 1 }}>
+        <text style={{ fg: COLORS.borderDim }}>└ </text>
+        <text style={{ fg: COLORS.textSecondary }}>scanning tmux sessions</text>
       </box>
     </box>
   );
@@ -359,10 +392,11 @@ const SearchField = ({ value }: SearchFieldProps) => {
 
   return (
     <box style={{ flexDirection: "row", height: 1, marginBottom: 1 }}>
-      <text style={{ fg: hasValue ? COLORS.accent : COLORS.border }}>❯ </text>
-      {!hasValue && <text style={{ fg: COLORS.textSecondary }}>{cursor}</text>}
+      <text style={{ fg: hasValue ? COLORS.accent : COLORS.borderDim }}>
+        {hasValue ? "› " : "  "}
+      </text>
       <text style={{ fg: hasValue ? COLORS.text : COLORS.border }}>
-        {hasValue ? value : "filter"}
+        {hasValue ? value : "type to filter"}
       </text>
       {hasValue && <text style={{ fg: COLORS.accent }}>{cursor}</text>}
     </box>
@@ -379,6 +413,7 @@ export const App = ({ forceLoading = false }: AppProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [dataLoaded, setDataLoaded] = useState(false);
   const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+  const [justLoaded, setJustLoaded] = useState(false);
   const renderer = useRenderer();
 
   const isLoading = !dataLoaded || !minTimeElapsed;
@@ -392,6 +427,8 @@ export const App = ({ forceLoading = false }: AppProps) => {
   const flatAgents = groups.flatMap((g) => g.agents);
   const workingCount = agents.filter((a) => a.status === "working").length;
 
+  const visibleGroupCount = useStaggeredReveal(groups.length, justLoaded);
+
   useEffect(() => {
     const timer = setTimeout(
       () => setMinTimeElapsed(true),
@@ -399,6 +436,12 @@ export const App = ({ forceLoading = false }: AppProps) => {
     );
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isLoading && !justLoaded && agents.length > 0) {
+      setJustLoaded(true);
+    }
+  }, [isLoading, justLoaded, agents.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -475,6 +518,14 @@ export const App = ({ forceLoading = false }: AppProps) => {
       }
       return;
     }
+    if (key.ctrl && key.name === "x") {
+      const agent = flatAgents[selectedIndex];
+      if (agent) {
+        sendKeys(agent.target, "C-c");
+        sendKeys(agent.target, "C-c");
+      }
+      return;
+    }
 
     // Search input
     if (key.name === "backspace") {
@@ -536,7 +587,7 @@ export const App = ({ forceLoading = false }: AppProps) => {
           }}
         >
           <box style={{ flexDirection: "column" }}>
-            {groups.map((group, i) => (
+            {groups.slice(0, visibleGroupCount).map((group, i) => (
               <SessionGroup
                 key={group.title}
                 group={group}
