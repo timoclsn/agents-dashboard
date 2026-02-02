@@ -9,7 +9,9 @@
     "cli:watch": "bun src/index.tsx --cli --watch",
     "cli:debug": "bun src/index.tsx --cli --debug",
     "build": "bun build src/index.tsx --compile --outfile=agents-dashboard",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "tsc",
+    "lint": "oxlint"
   },
   "dependencies": {
     "@opentui/core": "^0.1.69",
@@ -19,6 +21,7 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/react": "^19.0.0",
+    "oxlint": "^1.43.0",
     "typescript": "^5.7.0"
   }
 }
