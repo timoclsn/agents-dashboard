@@ -58,9 +58,12 @@ export const capturePane = async (target: string): Promise<string> => {
 
 export const focusPane = async (target: string): Promise<void> => {
   try {
-    const [sessionWindow] = target.split(".");
-    await $`tmux select-window -t ${sessionWindow}`.quiet();
-    await $`tmux select-pane -t ${target}`.quiet();
+    await $`tmux display-popup -C`.quiet();
+  } catch {
+    // Ignore if no popup is open
+  }
+  try {
+    await $`tmux switch-client -t ${target}`.quiet();
   } catch {
     // Ignore errors
   }

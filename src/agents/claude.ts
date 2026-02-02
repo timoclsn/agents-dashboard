@@ -1,10 +1,9 @@
 import type { PaneInfo } from "../tmux/client";
 
-// Spinner characters in title indicate working
-const SPINNER_CHARS = /[⠿⠇⠋⠙⠸⠴⠦⠧⠖⠏⠹⠼⠷⠾⠽⠻⠐⠑⠒⠓▶►]/;
-
-// Prompt patterns for idle detection
-const IDLE_PROMPT = /❯\s*$/m;
+// Working indicators in content:
+// - Status line: "· Scampering…", "✽ Pontificating…", etc.
+// - Command running: "Running…" or "⎿  Running…"
+const WORKING = /[·✢✳✶✻✽*]\s*\w+…|Running…/;
 
 export const detectClaude = (pane: PaneInfo): boolean => {
   const childCmdsLower = pane.childCommands
@@ -14,19 +13,12 @@ export const detectClaude = (pane: PaneInfo): boolean => {
 };
 
 export const detectClaudeStatus = (
-  title: string,
+  _title: string,
   content: string,
 ): "idle" | "working" => {
-  // Claude uses spinner in title for working state
-  if (SPINNER_CHARS.test(title)) {
+  const lastLines = content.slice(-500);
+  if (WORKING.test(lastLines)) {
     return "working";
   }
-
-  // Check for idle prompt
-  const lastLines = content.slice(-500);
-  if (IDLE_PROMPT.test(lastLines)) {
-    return "idle";
-  }
-
-  return "working";
+  return "idle";
 };

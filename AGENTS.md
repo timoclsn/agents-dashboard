@@ -10,6 +10,7 @@ bun run cli:watch  # CLI mode - continuous polling
 bun run cli:debug  # CLI mode - show all panes with detection info
 bun run start      # TUI mode
 bun run dev        # TUI mode with hot reload
+bun test           # Run tests
 ```
 
 ## Architecture
@@ -56,20 +57,20 @@ Child process detection is reliable even when pane content scrolls - the process
 
 **Claude:**
 
-- **Working**: Spinner character in pane title (`⠿⠇⠋⠙⠸⠴⠦⠧⠖⠏...`)
-- **Idle**: Prompt `❯` in content
+- **Working**: Status line in content (`· Scampering…`, `✽ Pontificating…`, `Running…`)
+- **Idle**: Everything else (default)
 
 **Codex:**
 
-- **Working**: Keywords `thinking`, `running`, `executing`, `generating`
-- **Idle**: Keywords `context left`, `ready`, `waiting for` or prompt `›`
+- **Working**: `esc to interrupt` in content
+- **Idle**: Everything else (default)
 
 **OpenCode:**
 
-- **Working**: Keywords `thinking`, `processing`, `generating`, `analyzing`, `working`
-- **Idle**: Keywords `ready`, `waiting`, `idle`
+- **Working**: `esc interrupt` in content
+- **Idle**: Everything else (default)
 
-**Fallback**: Prompt patterns (`❯`, `›`, `>`, `$`) at end of any line
+**Detection Philosophy**: Only check for definitive "working" indicators. Default to idle otherwise. This is simpler and more reliable than trying to enumerate all possible idle states.
 
 ### Tmux Data Format
 
@@ -145,7 +146,7 @@ if (agentType === "newagent") return detectNewAgentStatus(content);
 
 ## Future Improvements
 
-- [ ] Better idle detection (check for approval prompts)
+- [x] Better idle detection (check for approval prompts)
 - [ ] Context remaining percentage
 - [ ] Subagent tracking
 - [ ] Approve/reject from dashboard (send keys)

@@ -1,8 +1,7 @@
 import type { PaneInfo } from "../tmux/client";
 
-// Content-based patterns (OpenCode doesn't use title spinners)
-const PROCESSING = /thinking|processing|generating|analyzing|working/i;
-const IDLE = /ready|waiting|idle/i;
+// "esc interrupt" only shows during active work
+const WORKING = /esc interrupt/i;
 
 export const detectOpenCode = (pane: PaneInfo): boolean => {
   const childCmdsLower = pane.childCommands
@@ -13,9 +12,6 @@ export const detectOpenCode = (pane: PaneInfo): boolean => {
 
 export const detectOpenCodeStatus = (content: string): "idle" | "working" => {
   const lastLines = content.slice(-500);
-
-  if (PROCESSING.test(lastLines)) return "working";
-  if (IDLE.test(lastLines)) return "idle";
-
-  return "working";
+  if (WORKING.test(lastLines)) return "working";
+  return "idle";
 };
