@@ -305,24 +305,19 @@ const EmptyState = () => (
   </box>
 );
 
-const SCAN_WIDTH = 24;
-const SCAN_FRAMES = Array.from({ length: SCAN_WIDTH + 2 }, (_, i) => {
-  const pos = i - 1;
-  return Array.from({ length: SCAN_WIDTH }, (_, j) => {
-    if (j === pos || j === pos + 1) return "━";
-    return "─";
-  }).join("");
-});
-
 const RADAR_FRAMES = ["◜", "◝", "◞", "◟"];
 
 const LoadingState = () => {
   const [scanFrame, setScanFrame] = useState(0);
   const [radarFrame, setRadarFrame] = useState(0);
 
+  // Full width minus padding (1 on each side)
+  const scanWidth = Math.max(20, (process.stdout.columns || 80) - 2);
+  const totalFrames = scanWidth + 2;
+
   useEffect(() => {
     const scanInterval = setInterval(() => {
-      setScanFrame((f) => (f + 1) % SCAN_FRAMES.length);
+      setScanFrame((f) => (f + 1) % totalFrames);
     }, LOADER_INTERVAL);
 
     const radarInterval = setInterval(() => {
@@ -333,10 +328,13 @@ const LoadingState = () => {
       clearInterval(scanInterval);
       clearInterval(radarInterval);
     };
-  }, []);
+  }, [totalFrames]);
 
-  const scanLine = SCAN_FRAMES[scanFrame];
   const highlightPos = scanFrame - 1;
+  const scanLine = Array.from({ length: scanWidth }, (_, j) => {
+    if (j === highlightPos || j === highlightPos + 1) return "▰";
+    return "▱";
+  }).join("");
 
   return (
     <box style={{ flexDirection: "column", flexGrow: 1 }}>
@@ -351,11 +349,11 @@ const LoadingState = () => {
         <text style={{ fg: COLORS.accent }}>
           {scanLine.slice(
             Math.max(0, highlightPos),
-            Math.min(SCAN_WIDTH, highlightPos + 2),
+            Math.min(scanWidth, highlightPos + 2),
           )}
         </text>
         <text style={{ fg: COLORS.borderDim }}>
-          {scanLine.slice(Math.min(SCAN_WIDTH, highlightPos + 2))}
+          {scanLine.slice(Math.min(scanWidth, highlightPos + 2))}
         </text>
       </box>
       <box style={{ flexDirection: "row", height: 1, marginTop: 1 }}>
