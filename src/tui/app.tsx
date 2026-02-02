@@ -20,6 +20,8 @@ const COLORS = {
   idle: "#e2e2e2",
   border: "#505050",
   accent: "#818cf8",
+  accentSecondary: "#6366b0",
+  accentBorder: "#4a4d80",
   loaderDim: "#3a3a5a",
 };
 
@@ -108,6 +110,12 @@ interface AgentRowProps {
 }
 
 const AGENT_TYPE_WIDTH = 8; // "opencode" is the longest
+const MAX_SESSION_TITLE_LENGTH = 40;
+
+const truncateSessionTitle = (title: string): string => {
+  if (title.length <= MAX_SESSION_TITLE_LENGTH) return title;
+  return title.slice(0, MAX_SESSION_TITLE_LENGTH - 1) + "…";
+};
 
 const AgentRow = ({ agent, selected, isLast, onClick }: AgentRowProps) => {
   const paneRef = `${agent.window}.${agent.pane}`;
@@ -117,6 +125,13 @@ const AgentRow = ({ agent, selected, isLast, onClick }: AgentRowProps) => {
   const treeChar = isLast ? "└" : "├";
   const paddedType = agent.type.padEnd(AGENT_TYPE_WIDTH);
 
+  // When selected, use accent shades matching the normal hierarchy
+  const textColor = selected ? COLORS.accent : COLORS.text;
+  const secondaryColor = selected
+    ? COLORS.accentSecondary
+    : COLORS.textSecondary;
+  const borderColor = selected ? COLORS.accentBorder : COLORS.border;
+
   return (
     <box
       onMouseUp={onClick}
@@ -125,14 +140,27 @@ const AgentRow = ({ agent, selected, isLast, onClick }: AgentRowProps) => {
         flexDirection: "row",
       }}
     >
-      <text style={{ fg: COLORS.border }}>{treeChar}─ </text>
-      <text style={{ fg: isWorking ? COLORS.working : COLORS.idle, width: 2 }}>
+      <text style={{ fg: borderColor }}>{treeChar}─ </text>
+      <text
+        style={{
+          fg: isWorking
+            ? COLORS.working
+            : selected
+              ? COLORS.accent
+              : COLORS.idle,
+          width: 2,
+        }}
+      >
         {icon}
       </text>
       <text> </text>
-      <text style={{ fg: COLORS.text }}>{paddedType}</text>
-      <text style={{ fg: COLORS.textSecondary }}> {paneRef}</text>
-      {selected && <text style={{ fg: COLORS.accent }}> ◀</text>}
+      <text style={{ fg: textColor }}>{paddedType}</text>
+      <text style={{ fg: secondaryColor }}>{`  ${paneRef}  `}</text>
+      <text style={{ fg: secondaryColor }}>
+        {agent.sessionTitle
+          ? truncateSessionTitle(agent.sessionTitle)
+          : "[Empty session]"}
+      </text>
     </box>
   );
 };
@@ -161,7 +189,18 @@ const SessionGroup = ({
         <text style={{ fg: COLORS.textSecondary }}>
           ({group.displayIndex}){" "}
         </text>
-        <text style={{ fg: COLORS.text }}>{group.title}</text>
+        {group.title.includes("/") ? (
+          <>
+            <text style={{ fg: COLORS.textSecondary }}>
+              {group.title.split("/")[0]}/
+            </text>
+            <text style={{ fg: COLORS.text }}>
+              {group.title.split("/").slice(1).join("/")}
+            </text>
+          </>
+        ) : (
+          <text style={{ fg: COLORS.text }}>{group.title}</text>
+        )}
         {group.gitBranch && (
           <text style={{ fg: COLORS.textSecondary }}>
             :{truncateBranch(group.gitBranch)}

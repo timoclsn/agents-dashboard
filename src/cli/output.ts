@@ -13,13 +13,21 @@ const STATUS_ICONS: Record<Agent["status"], string> = {
   working: "▶",
 };
 
+const truncate = (str: string, maxLen: number): string => {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen - 1) + "…";
+};
+
 const formatAgent = (agent: Agent): string => {
   const attachedIcon = agent.attached ? "▸" : " ";
   const typeIcon = TYPE_ICONS[agent.type];
   const statusIcon = STATUS_ICONS[agent.status];
   const project = agent.path.split("/").pop() || agent.path;
+  const title = agent.sessionTitle
+    ? truncate(agent.sessionTitle, 30)
+    : "[Empty session]";
 
-  return `${attachedIcon} ${statusIcon} ${typeIcon} ${agent.type.padEnd(8)} ${agent.target.padEnd(20)} ${project}`;
+  return `${attachedIcon} ${statusIcon} ${typeIcon} ${agent.type.padEnd(8)}  ${agent.target.padEnd(20)}  ${project}  ${title}`;
 };
 
 const printAgents = (agents: Agent[]) => {
