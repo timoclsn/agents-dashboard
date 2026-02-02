@@ -7,6 +7,7 @@ const args = process.argv.slice(2);
 const cliMode = args.includes("--cli") || args.includes("-c");
 const watchMode = args.includes("--watch") || args.includes("-w");
 const debugMode = args.includes("--debug") || args.includes("-d");
+const loaderMode = args.includes("--loader") || args.includes("-l");
 
 const main = async () => {
   if (cliMode) {
@@ -18,7 +19,7 @@ const main = async () => {
     exitOnCtrlC: true,
   });
 
-  createRoot(renderer).render(<App />);
+  createRoot(renderer).render(<App forceLoading={loaderMode} />);
 };
 
 main();

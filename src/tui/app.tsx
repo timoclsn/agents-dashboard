@@ -5,6 +5,8 @@ import { focusPane } from "../tmux/client";
 
 const POLL_INTERVAL = 500;
 const SPINNER_INTERVAL = 80;
+const LOADER_INTERVAL = 120;
+const MIN_LOADER_DURATION = 1000;
 
 const SPINNER_FRAMES = ["⣷", "⣯", "⣟", "⡿", "⢿", "⣻", "⣽", "⣾"];
 const IDLE_ICON = "•";
@@ -18,6 +20,7 @@ const COLORS = {
   idle: "#e2e2e2",
   border: "#505050",
   accent: "#818cf8",
+  loaderDim: "#3a3a5a",
 };
 
 interface AgentGroup {
@@ -164,20 +167,23 @@ const SessionGroup = ({
   );
 };
 
-const Header = ({
-  count,
-  workingCount,
-}: {
+interface HeaderProps {
   count: number;
   workingCount: number;
-}) => (
+  isLoading: boolean;
+}
+
+const Header = ({ count, workingCount, isLoading }: HeaderProps) => (
   <box style={{ marginBottom: 1, flexDirection: "row", height: 1 }}>
     <text style={{ fg: COLORS.accent }}>◈</text>
-    <text style={{ fg: COLORS.text }}> agents </text>
-    <text style={{ fg: COLORS.textSecondary }}>
-      {count} running
-      {workingCount > 0 && ` · ${workingCount} active`}
-    </text>
+    <text style={{ fg: COLORS.text }}> agents</text>
+    {!isLoading && (
+      <text style={{ fg: COLORS.textSecondary }}>
+        {" "}
+        {count} running
+        {workingCount > 0 && ` · ${workingCount} active`}
+      </text>
+    )}
   </box>
 );
 
@@ -201,6 +207,69 @@ const EmptyState = () => (
     </text>
   </box>
 );
+
+const SCAN_FRAMES = [
+  "▰▱▱▱▱▱▱▱",
+  "▰▰▱▱▱▱▱▱",
+  "▱▰▰▱▱▱▱▱",
+  "▱▱▰▰▱▱▱▱",
+  "▱▱▱▰▰▱▱▱",
+  "▱▱▱▱▰▰▱▱",
+  "▱▱▱▱▱▰▰▱",
+  "▱▱▱▱▱▱▰▰",
+  "▱▱▱▱▱▱▱▰",
+  "▱▱▱▱▱▱▱▱",
+];
+
+const RADAR_FRAMES = ["◜", "◝", "◞", "◟"];
+
+const LoadingState = () => {
+  const [scanFrame, setScanFrame] = useState(0);
+  const [radarFrame, setRadarFrame] = useState(0);
+  const [dots, setDots] = useState(0);
+
+  useEffect(() => {
+    const scanInterval = setInterval(() => {
+      setScanFrame((f) => (f + 1) % SCAN_FRAMES.length);
+    }, LOADER_INTERVAL);
+
+    const radarInterval = setInterval(() => {
+      setRadarFrame((f) => (f + 1) % RADAR_FRAMES.length);
+    }, 100);
+
+    const dotsInterval = setInterval(() => {
+      setDots((d) => (d + 1) % 4);
+    }, 400);
+
+    return () => {
+      clearInterval(scanInterval);
+      clearInterval(radarInterval);
+      clearInterval(dotsInterval);
+    };
+  }, []);
+
+  const dotStr = ".".repeat(dots);
+
+  return (
+    <box style={{ flexDirection: "column", flexGrow: 1 }}>
+      <box style={{ flexDirection: "row", height: 1 }}>
+        <text style={{ fg: COLORS.accent }}>{RADAR_FRAMES[radarFrame]} </text>
+        <text style={{ fg: COLORS.text }}>Scanning tmux sessions</text>
+        <text style={{ fg: COLORS.textSecondary, width: 4 }}>{dotStr}</text>
+      </box>
+      <box style={{ flexDirection: "row", height: 1, marginTop: 1 }}>
+        <text style={{ fg: COLORS.loaderDim }}> </text>
+        <text style={{ fg: COLORS.accent }}>{SCAN_FRAMES[scanFrame]}</text>
+      </box>
+      <box style={{ flexDirection: "row", height: 1, marginTop: 1 }}>
+        <text style={{ fg: COLORS.border }}> ╰─ </text>
+        <text style={{ fg: COLORS.textSecondary }}>
+          detecting agent processes
+        </text>
+      </box>
+    </box>
+  );
+};
 
 const CURSOR_FRAMES = ["▏", "▎", "▍", "▌", "▍", "▎"];
 const CURSOR_INTERVAL = 200;
@@ -238,11 +307,19 @@ const SearchField = ({ value }: SearchFieldProps) => {
   );
 };
 
-export const App = () => {
+interface AppProps {
+  forceLoading?: boolean;
+}
+
+export const App = ({ forceLoading = false }: AppProps) => {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
   const renderer = useRenderer();
+
+  const isLoading = !dataLoaded || !minTimeElapsed;
 
   const allGroups = groupAgents(agents, agents);
   const groups = searchQuery
@@ -252,6 +329,14 @@ export const App = () => {
     : allGroups;
   const flatAgents = groups.flatMap((g) => g.agents);
   const workingCount = agents.filter((a) => a.status === "working").length;
+
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setMinTimeElapsed(true),
+      MIN_LOADER_DURATION,
+    );
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -264,9 +349,9 @@ export const App = () => {
         const result = await pollAgents();
         if (!cancelled && id === pollId) {
           setAgents(result);
+          setDataLoaded(true);
         }
-      } catch {
-      }
+      } catch {}
     };
 
     poll();
@@ -347,10 +432,16 @@ export const App = () => {
 
   return (
     <box style={{ flexDirection: "column", padding: 1, height: "100%" }}>
-      <Header count={agents.length} workingCount={workingCount} />
+      <Header
+        count={agents.length}
+        workingCount={workingCount}
+        isLoading={isLoading || forceLoading}
+      />
       <SearchField value={searchQuery} />
 
-      {agents.length === 0 ? (
+      {isLoading || forceLoading ? (
+        <LoadingState />
+      ) : agents.length === 0 ? (
         <EmptyState />
       ) : groups.length === 0 ? (
         <box style={{ marginTop: 1 }}>
