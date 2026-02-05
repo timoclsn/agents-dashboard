@@ -1,4 +1,5 @@
 import type { PaneInfo } from "../tmux/client";
+import { STATUS_SCAN_CHARS } from "./detect";
 
 // Working indicators in content:
 // - Status line: "· Scampering…", "✽ Pontificating…", etc.
@@ -16,7 +17,7 @@ export const detectClaudeStatus = (
   _title: string,
   content: string,
 ): "idle" | "working" => {
-  const lastLines = content.slice(-500);
+  const lastLines = content.slice(-STATUS_SCAN_CHARS);
   if (WORKING.test(lastLines)) {
     return "working";
   }

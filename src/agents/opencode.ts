@@ -1,4 +1,5 @@
 import type { PaneInfo } from "../tmux/client";
+import { STATUS_SCAN_CHARS } from "./detect";
 
 // "esc interrupt" only shows during active work
 const WORKING = /esc interrupt/i;
@@ -11,7 +12,7 @@ export const detectOpenCode = (pane: PaneInfo): boolean => {
 };
 
 export const detectOpenCodeStatus = (content: string): "idle" | "working" => {
-  const lastLines = content.slice(-500);
+  const lastLines = content.slice(-STATUS_SCAN_CHARS);
   if (WORKING.test(lastLines)) return "working";
   return "idle";
 };

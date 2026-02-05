@@ -3,6 +3,9 @@ import type { PaneInfo } from "../tmux/client";
 export type AgentType = "claude" | "codex" | "opencode" | "unknown";
 export type AgentStatus = "idle" | "working";
 
+// How many characters from the end of pane content to check for status indicators
+export const STATUS_SCAN_CHARS = 1000;
+
 export interface Agent {
   target: string;
   session: string;
