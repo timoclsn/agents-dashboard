@@ -24,16 +24,14 @@ export const detectClaudeStatus = (
   return "idle";
 };
 
-// Parse session title from status line like:
-// Opus 4.5 | 74k/200k (37%) | +104/-4 | project:branch | "Session Title Here"
-const SESSION_TITLE_PATTERN = /\|\s*"([^"]+)"\s*$/;
+// Parse session title from the status line. The title is the last pipe-separated
+// segment when there are 5+ segments (model | context | changes | project | title)
+const STATUS_LINE_PATTERN = /^\s*(?:\S+\s+\S+)\s*\|.*\|.*\|.*\|\s*(.+?)\s*$/;
 
 export const parseClaudeSessionTitle = (content: string): string | null => {
   const lines = content.split("\n");
-  // Search from bottom up for the status line with quoted title
   for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
-    const match = SESSION_TITLE_PATTERN.exec(line);
+    const match = STATUS_LINE_PATTERN.exec(lines[i]);
     if (match) {
       return match[1];
     }
