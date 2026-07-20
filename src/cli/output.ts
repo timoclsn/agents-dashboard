@@ -1,4 +1,5 @@
-import { pollAgents, type Agent } from "../agents/detect";
+import { pollDashboard, type Agent, type DashboardState } from "../agents/detect";
+import type { Worktree } from "../worktrees/scan";
 import { debugListPanes } from "../tmux/client";
 
 const TYPE_ICONS: Record<Agent["type"], string> = {
@@ -30,25 +31,36 @@ const formatAgent = (agent: Agent): string => {
   return `${attachedIcon} ${statusIcon} ${typeIcon} ${agent.type.padEnd(8)}  ${agent.target.padEnd(20)}  ${project}  ${title}`;
 };
 
-const printAgents = (agents: Agent[]) => {
+const formatWorktree = (worktree: Worktree): string => {
+  const branch = worktree.gitBranch ? ` :${worktree.gitBranch}` : "";
+  return `  ⎇ ${worktree.org}/${worktree.name}${branch}`;
+};
+
+const printState = ({ agents, worktrees }: DashboardState) => {
   console.clear();
   console.log("Agents Dashboard (CLI mode)\n");
 
   if (agents.length === 0) {
     console.log("No agents detected...\n");
-    return;
+  } else {
+    console.log(
+      `  ${"ST".padEnd(2)} ${"T".padEnd(1)} ${"TYPE".padEnd(8)} ${"TARGET".padEnd(20)} PROJECT`,
+    );
+    console.log("-".repeat(62));
+
+    for (const agent of agents) {
+      console.log(formatAgent(agent));
+    }
+
+    console.log(`\nTotal: ${agents.length} agent(s)`);
   }
 
-  console.log(
-    `  ${"ST".padEnd(2)} ${"T".padEnd(1)} ${"TYPE".padEnd(8)} ${"TARGET".padEnd(20)} PROJECT`,
-  );
-  console.log("-".repeat(62));
-
-  for (const agent of agents) {
-    console.log(formatAgent(agent));
+  if (worktrees.length > 0) {
+    console.log(`\nWorktrees (not open): ${worktrees.length}`);
+    for (const worktree of worktrees) {
+      console.log(formatWorktree(worktree));
+    }
   }
-
-  console.log(`\nTotal: ${agents.length} agent(s)`);
 };
 
 interface CliOptions {
@@ -63,8 +75,8 @@ export const runCli = async ({ watch = false, debug = false }: CliOptions) => {
     console.log("\n=== Detected agents ===\n");
   }
 
-  const agents = await pollAgents();
-  printAgents(agents);
+  const state = await pollDashboard();
+  printState(state);
 
   if (watch) {
     console.log("\nWatching for changes (Ctrl+C to exit)...\n");
@@ -73,10 +85,10 @@ export const runCli = async ({ watch = false, debug = false }: CliOptions) => {
     // Allow overlapping polls, but only apply the latest result.
     const interval = setInterval(() => {
       const id = ++pollId;
-      pollAgents()
+      pollDashboard()
         .then((updated) => {
           if (id === pollId) {
-            printAgents(updated);
+            printState(updated);
           }
         })
         .catch(() => {});

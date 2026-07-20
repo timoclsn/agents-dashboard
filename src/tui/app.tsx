@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { pollAgents, type Agent } from "../agents/detect";
-import { focusPane, sendKeys } from "../tmux/client";
+import { pollDashboard, type Agent } from "../agents/detect";
+import type { Worktree } from "../worktrees/scan";
+import { focusPane, openWorktree, sendKeys } from "../tmux/client";
 
 const POLL_INTERVAL = 500;
 const SPINNER_INTERVAL = 80;
@@ -253,25 +254,107 @@ const SessionGroup = ({
   );
 };
 
-interface HeaderProps {
-  count: number;
-  workingCount: number;
-  isLoading: boolean;
+interface WorktreeRowProps {
+  worktree: Worktree;
+  selected: boolean;
+  isLast: boolean;
+  onClick: () => void;
 }
 
-const Header = ({ count, workingCount, isLoading }: HeaderProps) => (
+const WorktreeRow = ({
+  worktree,
+  selected,
+  isLast,
+  onClick,
+}: WorktreeRowProps) => {
+  const treeChar = isLast ? "└" : "├";
+  const selectionIndicator = selected ? "▌" : " ";
+
+  return (
+    <box onMouseUp={onClick} style={{ height: 1, flexDirection: "row" }}>
+      <text style={{ fg: selected ? COLORS.accent : "transparent" }}>
+        {selectionIndicator}
+      </text>
+      <text style={{ fg: COLORS.borderDim }}>{treeChar}─</text>
+      <text style={{ fg: COLORS.accentDim, width: 2 }}>⎇</text>
+      <text style={{ fg: COLORS.textSecondary }}>{worktree.org}/</text>
+      <text style={{ fg: COLORS.text }}>{worktree.name}</text>
+      {worktree.gitBranch && (
+        <text style={{ fg: COLORS.border }}>
+          {" "}
+          :{truncateBranch(worktree.gitBranch)}
+        </text>
+      )}
+    </box>
+  );
+};
+
+interface WorktreesSectionProps {
+  worktrees: Worktree[];
+  selectedWorktree: Worktree | null;
+  isFirst: boolean;
+  onOpen: (worktree: Worktree) => void;
+}
+
+const WorktreesSection = ({
+  worktrees,
+  selectedWorktree,
+  isFirst,
+  onOpen,
+}: WorktreesSectionProps) => (
+  <box style={{ flexDirection: "column", marginTop: isFirst ? 0 : 1 }}>
+    <box style={{ flexDirection: "row", height: 1 }}>
+      <text style={{ fg: COLORS.accent }}>⎇ </text>
+      <text style={{ fg: COLORS.text }}>worktrees</text>
+      {worktrees.length > 0 && (
+        <text style={{ fg: COLORS.border }}> {worktrees.length}</text>
+      )}
+    </box>
+    {worktrees.length === 0 ? (
+      <box style={{ flexDirection: "row", height: 1 }}>
+        <text style={{ fg: COLORS.borderDim }}>└ </text>
+        <text style={{ fg: COLORS.border }}>none to open · all in a session</text>
+      </box>
+    ) : (
+      <box style={{ flexDirection: "column" }}>
+        {worktrees.map((worktree, i) => (
+          <WorktreeRow
+            key={worktree.path}
+            worktree={worktree}
+            selected={selectedWorktree?.path === worktree.path}
+            isLast={i === worktrees.length - 1}
+            onClick={() => onOpen(worktree)}
+          />
+        ))}
+      </box>
+    )}
+  </box>
+);
+
+const Header = () => (
   <box style={{ marginBottom: 1, flexDirection: "row", height: 1 }}>
     <text style={{ fg: COLORS.accent }}>◈ </text>
+    <text style={{ fg: COLORS.text }}>dashboard</text>
+  </box>
+);
+
+interface AgentsSectionHeaderProps {
+  count: number;
+  workingCount: number;
+}
+
+const AgentsSectionHeader = ({
+  count,
+  workingCount,
+}: AgentsSectionHeaderProps) => (
+  <box style={{ flexDirection: "row", height: 1 }}>
+    <text style={{ fg: COLORS.accent }}>◆ </text>
     <text style={{ fg: COLORS.text }}>agents</text>
-    {!isLoading && (
+    {count > 0 && <text style={{ fg: COLORS.border }}> {count}</text>}
+    {workingCount > 0 && (
       <>
-        <text style={{ fg: COLORS.border }}> {count}</text>
-        {workingCount > 0 && (
-          <>
-            <text style={{ fg: COLORS.borderDim }}> · </text>
-            <text style={{ fg: COLORS.accentDim }}>{workingCount} working</text>
-          </>
-        )}
+        <text style={{ fg: COLORS.borderDim }}> · </text>
+        <text style={{ fg: COLORS.accentDim }}>{workingCount} working</text>
       </>
     )}
   </box>
@@ -283,7 +366,7 @@ const Footer = () => (
     <text style={{ fg: COLORS.textSecondary }}> nav</text>
     <text style={{ fg: COLORS.borderDim }}> · </text>
     <text style={{ fg: COLORS.border }}>⏎</text>
-    <text style={{ fg: COLORS.textSecondary }}> focus</text>
+    <text style={{ fg: COLORS.textSecondary }}> open</text>
     <text style={{ fg: COLORS.borderDim }}> · </text>
     <text style={{ fg: COLORS.border }}>^x</text>
     <text style={{ fg: COLORS.textSecondary }}> kill</text>
@@ -405,8 +488,13 @@ interface AppProps {
   forceLoading?: boolean;
 }
 
+type SelectableItem =
+  | { kind: "agent"; agent: Agent }
+  | { kind: "worktree"; worktree: Worktree };
+
 export const App = ({ forceLoading = false }: AppProps) => {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -416,14 +504,27 @@ export const App = ({ forceLoading = false }: AppProps) => {
 
   const isLoading = !dataLoaded || !minTimeElapsed;
 
+  const query = searchQuery.toLowerCase();
   const allGroups = groupAgents(agents, agents);
   const groups = searchQuery
-    ? allGroups.filter((g) =>
-        g.title.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
+    ? allGroups.filter((g) => g.title.toLowerCase().includes(query))
     : allGroups;
   const flatAgents = groups.flatMap((g) => g.agents);
-  const workingCount = agents.filter((a) => a.status === "working").length;
+  const filteredWorktrees = searchQuery
+    ? worktrees.filter((w) => w.name.toLowerCase().includes(query))
+    : worktrees;
+  const shownWorkingCount = flatAgents.filter(
+    (a) => a.status === "working",
+  ).length;
+  const showAgentsSection = flatAgents.length > 0 || !searchQuery;
+
+  const items: SelectableItem[] = [
+    ...flatAgents.map((agent) => ({ kind: "agent" as const, agent })),
+    ...filteredWorktrees.map((worktree) => ({
+      kind: "worktree" as const,
+      worktree,
+    })),
+  ];
 
   const visibleGroupCount = useStaggeredReveal(groups.length, justLoaded);
 
@@ -436,10 +537,10 @@ export const App = ({ forceLoading = false }: AppProps) => {
   }, []);
 
   useEffect(() => {
-    if (!isLoading && !justLoaded && agents.length > 0) {
+    if (!isLoading && !justLoaded && (agents.length > 0 || worktrees.length > 0)) {
       setJustLoaded(true);
     }
-  }, [isLoading, justLoaded, agents.length]);
+  }, [isLoading, justLoaded, agents.length, worktrees.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -450,15 +551,16 @@ export const App = ({ forceLoading = false }: AppProps) => {
     const poll = async () => {
       const id = ++pollId;
       try {
-        const result = await pollAgents();
+        const result = await pollDashboard();
         if (!cancelled && id === pollId) {
-          setAgents(result);
+          setAgents(result.agents);
+          setWorktrees(result.worktrees);
           setDataLoaded(true);
 
           // Set initial cursor to attached session on first load
-          if (!initialSelectionSet && result.length > 0) {
+          if (!initialSelectionSet && result.agents.length > 0) {
             initialSelectionSet = true;
-            const groups = groupAgents(result, result);
+            const groups = groupAgents(result.agents, result.agents);
             const flat = groups.flatMap((g) => g.agents);
             const attachedIndex = flat.findIndex((a) => a.attached);
             if (attachedIndex !== -1) {
@@ -493,7 +595,7 @@ export const App = ({ forceLoading = false }: AppProps) => {
 
     // Navigation: arrow keys or ctrl+n/p
     if (key.name === "down" || (key.ctrl && key.name === "n")) {
-      setSelectedIndex((i) => Math.min(i + 1, flatAgents.length - 1));
+      setSelectedIndex((i) => Math.min(i + 1, items.length - 1));
       return;
     }
     if (key.name === "up" || (key.ctrl && key.name === "p")) {
@@ -501,10 +603,15 @@ export const App = ({ forceLoading = false }: AppProps) => {
       return;
     }
 
-    // Actions
+    // Actions: focus the agent's pane, or open the worktree as a session
     if (key.name === "return") {
-      const agent = flatAgents[selectedIndex];
-      if (agent) focusPane(agent.target);
+      const item = items[selectedIndex];
+      if (!item) return;
+      if (item.kind === "agent") {
+        focusPane(item.agent.target);
+      } else {
+        openWorktree(item.worktree.path);
+      }
       return;
     }
     if (key.name === "escape") {
@@ -517,10 +624,10 @@ export const App = ({ forceLoading = false }: AppProps) => {
       return;
     }
     if (key.ctrl && key.name === "x") {
-      const agent = flatAgents[selectedIndex];
-      if (agent) {
-        sendKeys(agent.target, "C-c");
-        sendKeys(agent.target, "C-c");
+      const item = items[selectedIndex];
+      if (item?.kind === "agent") {
+        sendKeys(item.agent.target, "C-c");
+        sendKeys(item.agent.target, "C-c");
       }
       return;
     }
@@ -536,37 +643,48 @@ export const App = ({ forceLoading = false }: AppProps) => {
   });
 
   useEffect(() => {
-    if (flatAgents.length === 0) {
+    if (items.length === 0) {
       setSelectedIndex(0);
-    } else if (selectedIndex >= flatAgents.length) {
-      setSelectedIndex(flatAgents.length - 1);
+    } else if (selectedIndex >= items.length) {
+      setSelectedIndex(items.length - 1);
     }
-  }, [flatAgents.length, selectedIndex]);
+  }, [items.length, selectedIndex]);
 
-  const selectedAgent = flatAgents[selectedIndex] || null;
+  const selectedItem = items[selectedIndex] || null;
+  const selectedAgent = selectedItem?.kind === "agent" ? selectedItem.agent : null;
+  const selectedWorktree =
+    selectedItem?.kind === "worktree" ? selectedItem.worktree : null;
 
   const handleAgentClick = (agent: Agent) => {
-    const index = flatAgents.findIndex((a) => a.target === agent.target);
+    const index = items.findIndex(
+      (item) => item.kind === "agent" && item.agent.target === agent.target,
+    );
     if (index !== -1) {
       setSelectedIndex(index);
     }
     focusPane(agent.target);
   };
 
+  const handleWorktreeClick = (worktree: Worktree) => {
+    const index = items.findIndex(
+      (item) => item.kind === "worktree" && item.worktree.path === worktree.path,
+    );
+    if (index !== -1) {
+      setSelectedIndex(index);
+    }
+    openWorktree(worktree.path);
+  };
+
   return (
     <box style={{ flexDirection: "column", padding: 1, height: "100%" }}>
-      <Header
-        count={agents.length}
-        workingCount={workingCount}
-        isLoading={isLoading || forceLoading}
-      />
+      <Header />
       <SearchField value={searchQuery} />
 
       {isLoading || forceLoading ? (
         <LoadingState />
-      ) : agents.length === 0 ? (
+      ) : agents.length === 0 && worktrees.length === 0 ? (
         <EmptyState />
-      ) : groups.length === 0 ? (
+      ) : groups.length === 0 && filteredWorktrees.length === 0 ? (
         <box style={{ marginTop: 1 }}>
           <text style={{ fg: COLORS.textSecondary }}>No matches</text>
         </box>
@@ -585,15 +703,38 @@ export const App = ({ forceLoading = false }: AppProps) => {
           }}
         >
           <box style={{ flexDirection: "column" }}>
-            {groups.slice(0, visibleGroupCount).map((group, i) => (
-              <SessionGroup
-                key={group.title}
-                group={group}
-                selectedAgent={selectedAgent}
-                isFirst={i === 0}
-                onAgentClick={handleAgentClick}
+            {showAgentsSection && (
+              <AgentsSectionHeader
+                count={flatAgents.length}
+                workingCount={shownWorkingCount}
               />
-            ))}
+            )}
+            {showAgentsSection && flatAgents.length === 0 ? (
+              <box style={{ flexDirection: "row", height: 1 }}>
+                <text style={{ fg: COLORS.borderDim }}>└ </text>
+                <text style={{ fg: COLORS.border }}>
+                  none running · start one in tmux
+                </text>
+              </box>
+            ) : (
+              groups.slice(0, visibleGroupCount).map((group, i) => (
+                <SessionGroup
+                  key={group.title}
+                  group={group}
+                  selectedAgent={selectedAgent}
+                  isFirst={i === 0}
+                  onAgentClick={handleAgentClick}
+                />
+              ))
+            )}
+            {(filteredWorktrees.length > 0 || !searchQuery) && (
+              <WorktreesSection
+                worktrees={filteredWorktrees}
+                selectedWorktree={selectedWorktree}
+                isFirst={!showAgentsSection}
+                onOpen={handleWorktreeClick}
+              />
+            )}
           </box>
         </scrollbox>
       )}

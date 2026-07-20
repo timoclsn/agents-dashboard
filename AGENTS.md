@@ -23,14 +23,19 @@ src/
 ├── cli/
 │   └── output.ts          # CLI output formatting
 ├── tmux/
-│   ├── client.ts          # Tmux commands (list-panes, capture, focus)
+│   ├── client.ts          # Tmux commands (list-panes, capture, focus, open-worktree)
 │   └── process.ts         # Process cache for child detection
-└── agents/
-    ├── detect.ts          # Types + main detection + polling logic
-    ├── claude.ts          # Claude-specific patterns
-    ├── codex.ts           # Codex-specific patterns
-    └── opencode.ts        # OpenCode-specific patterns
+├── agents/
+│   ├── detect.ts          # Types + main detection + polling logic
+│   ├── claude.ts          # Claude-specific patterns
+│   ├── codex.ts           # Codex-specific patterns
+│   └── opencode.ts        # OpenCode-specific patterns
+└── worktrees/
+    └── scan.ts            # Scan ~/Developer for -w- worktrees not open in tmux
 ```
+
+`pollDashboard()` in `detect.ts` is the single poll used by both TUI and CLI: it
+lists panes once, then builds agents and scans worktrees from the same pane data.
 
 ### Key Dependencies
 
@@ -81,11 +86,28 @@ const format = `#{session_attached}|||#{session_name}|||...`;
 const result = await $`tmux list-panes -a -F ${format}`.text();
 ```
 
+## Worktree Detection (`src/worktrees/`)
+
+Lists git worktrees on disk that aren't open in tmux, so they can be opened
+quickly from the dashboard via the user's `tmux-sessionizer` script.
+
+- **Which dirs**: scans `~/Developer/*/` for child dirs whose name contains the
+  `-w-` infix (the `/worktree` skill's naming convention) where `.git` is a
+  **file** (a linked worktree points at its gitdir; a normal repo's `.git` is a directory).
+- **"Not open"**: a worktree is excluded if any tmux pane's `pane_current_path`
+  equals it or sits under it. The pane list from `pollDashboard()` supplies these paths.
+- **Caching**: the disk scan + git-branch lookups are cached 5s; the open-filter
+  is applied live each poll against current pane paths.
+- **Opening**: `Enter` (or click) runs `openWorktree(path)` in `client.ts`, which
+  closes any popup then runs `tmux-sessionizer <path>` (must be on `PATH`).
+
 ## TUI Notes (`src/tui/app.tsx`)
 
 - **Do NOT nest `<text>` inside `<text>`** - OpenTUI throws "TextNodeRenderable only accepts strings"
 - Use `<box style={{ flexDirection: "row" }}>` for horizontal layouts with multiple text elements
-- Keybindings: `j/k` navigate, `Enter` focus pane, `q` quit
+- Keybindings: `j/k` navigate, `Enter` focus pane / open worktree, `q` quit
+- Selection spans a unified `items` list (agents first, then worktrees); `Enter`
+  focuses agent panes and opens worktree sessions, `^x` (kill) applies to agents only.
 
 ## CLI Flags
 

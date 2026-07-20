@@ -40,6 +40,7 @@ import {
   detectOpenCodeStatus,
   parseOpenCodeSessionTitle,
 } from "./opencode";
+import { scanWorktrees, type Worktree } from "../worktrees/scan";
 
 // Fallback prompt patterns for all agents
 const FALLBACK_PROMPTS = [/❯\s*$/m, /›\s*$/m, /^>\s*$/m, /\$\s*$/m];
@@ -110,8 +111,12 @@ const detectStatus = (
   return content.trim().length > 0 ? "working" : "idle";
 };
 
-export const pollAgents = async (): Promise<Agent[]> => {
-  const panes = await listPanes();
+export interface DashboardState {
+  agents: Agent[];
+  worktrees: Worktree[];
+}
+
+const buildAgents = async (panes: PaneInfo[]): Promise<Agent[]> => {
   const agents: Agent[] = [];
 
   const agentPanes = panes.filter((pane) => detectAgentType(pane) !== null);
@@ -158,4 +163,18 @@ export const pollAgents = async (): Promise<Agent[]> => {
   }
 
   return agents;
+};
+
+export const pollAgents = async (): Promise<Agent[]> => {
+  const panes = await listPanes();
+  return buildAgents(panes);
+};
+
+export const pollDashboard = async (): Promise<DashboardState> => {
+  const panes = await listPanes();
+  const [agents, worktrees] = await Promise.all([
+    buildAgents(panes),
+    scanWorktrees(new Set(panes.map((pane) => pane.path))),
+  ]);
+  return { agents, worktrees };
 };

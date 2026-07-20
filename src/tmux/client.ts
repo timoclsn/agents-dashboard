@@ -109,6 +109,19 @@ export const focusPane = async (target: string): Promise<void> => {
   }
 };
 
+export const openWorktree = async (path: string): Promise<void> => {
+  try {
+    await $`tmux display-popup -C`.quiet();
+  } catch {
+    // Ignore if no popup is open
+  }
+  try {
+    await $`tmux-sessionizer ${path}`.quiet();
+  } catch {
+    // Ignore errors
+  }
+};
+
 export const sendKeys = async (target: string, keys: string): Promise<void> => {
   try {
     await $`tmux send-keys -t ${target} ${keys}`.quiet();
