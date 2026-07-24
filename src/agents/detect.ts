@@ -29,7 +29,7 @@ export interface Agent {
   gitBranch: string | null;
   sessionTitle: string | null;
   attached: boolean;
-  // Percentage of context window remaining (Claude only; null otherwise).
+  // Percentage of context window used (Claude only; null otherwise).
   contextPercent: number | null;
 }
 import {

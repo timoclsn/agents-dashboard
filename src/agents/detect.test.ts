@@ -121,11 +121,11 @@ describe("Claude", () => {
   });
 
   describe("parseClaudeContext", () => {
-    test("returns remaining percent from the statusline usage", () => {
+    test("returns the used percent from the statusline usage", () => {
       expect(
         parseClaudeContext("Opus 4.8 (xhigh) | 48k/1M (5%) | +0/-0 | dir:main"),
-      ).toBe(95);
-      expect(parseClaudeContext("… 900k/1M (90%) …")).toBe(10);
+      ).toBe(5);
+      expect(parseClaudeContext("… 900k/1M (90%) …")).toBe(90);
     });
 
     test("returns null when no context usage is present", () => {

@@ -42,8 +42,8 @@ export const detectClaudeStatus = (
 };
 
 // Claude Code's statusline prints the context window as "<used>/<total> (<n>%)"
-// (see the user's statusline.ts), where n is the percentage *used*. Return the
-// percentage *remaining* (100 − used), or null when no statusline is on screen.
+// (see the user's statusline.ts), where n is the percentage *used*. Return that
+// used percentage (matching Claude Code), or null when no statusline is on screen.
 const CONTEXT_USAGE = /\/\s*[\d.]+[kmg]?\s*\((\d{1,3})%\)/gi;
 
 export const parseClaudeContext = (content: string): number | null => {
@@ -52,7 +52,7 @@ export const parseClaudeContext = (content: string): number | null => {
   if (!last) return null;
   const used = parseInt(last[1], 10);
   if (Number.isNaN(used)) return null;
-  return Math.min(100, Math.max(0, 100 - used));
+  return Math.min(100, Math.max(0, used));
 };
 
 // The title (from #{pane_title}) carries the task; strip the leading state

@@ -184,9 +184,9 @@ tiles; worktrees whose repo has no live session collect in a final `not open` ro
   (using `viewport.y/height` vs `row.y/height`) keeps the selected repo in view.
 - **Keys arrive two ways**: arrows/`return`/`escape` as `key.name`; plain letters
   (`j k h l n q`) as `key.sequence` (guard `!ctrl && !meta`).
-- **Context % remaining**: Claude rows show the context window remaining, parsed
-  from the statusline usage (`<used>/<total> (n%)` → `100 − n`) by
-  `parseClaudeContext` in `claude.ts`. Coloured dim / amber / red as it runs low;
+- **Context % used**: Claude rows show the context window used (matching Claude
+  Code), parsed from the statusline usage (`<used>/<total> (n%)` → `n`) by
+  `parseClaudeContext` in `claude.ts`. Coloured dim / amber / red as it fills up;
   hidden for non-Claude agents or when no statusline is on screen.
 - **Needs-you band**: a pinned strip above the grid lists every blocked agent
   across all repos (so it stays visible when scrolled off). Clicking an entry jumps
