@@ -178,6 +178,9 @@ tiles; worktrees whose repo has no live session collect in a final `not open` ro
   `flexShrink: 0` so they keep `TILE_WIDTH`.
 - **Selection is the checkout (tile), not the agent** — agents are display-only. A
   tile shows its state via border colour; the selected tile's border is `COLORS.sel`.
+- **Repo header badges count sessions (open checkouts) by status**, not agents, so
+  the number matches the tiles on the row (e.g. `•3` = three idle checkouts). The
+  top header still totals agents across the fleet.
 - **Horizontal scroll is windowing, not a scrollbox**: `buildRows()` + `RowView`
   render only `visibleCount = ⌊width / (TILE_WIDTH+gap)⌋` tiles, shifting the start
   so the selected column stays visible. `visibleCount` comes from
