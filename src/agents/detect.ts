@@ -42,6 +42,7 @@ import {
   detectClaude,
   detectClaudeStatus,
   parseClaudeSessionTitle,
+  parseClaudeStatuslineTitle,
   parseClaudeContext,
 } from "./claude";
 import {
@@ -79,7 +80,7 @@ const parseSessionTitle = ({
   agentType: AgentType;
 }): string | null => {
   if (agentType === "claude") {
-    return parseClaudeSessionTitle(pane.title);
+    return parseClaudeSessionTitle(pane.title) ?? parseClaudeStatuslineTitle(content);
   }
   if (agentType === "codex") {
     return parseCodexSessionTitle(content);

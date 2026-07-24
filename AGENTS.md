@@ -84,7 +84,9 @@ region. Content scanning remains a fallback.
 - **Idle**: leading `✳` (U+2733) glyph in title
 - Fallback: content spinner (`· Scampering…`, `Running…`) → working, else idle
 - **Title**: strip the leading glyph from `#{pane_title}`; `✳ Claude Code`
-  (the default, no task) → `null`
+  (the default, no task) → `null`. When null, fall back to the session name Claude
+  prints as the statusline's trailing ` | <session>` field
+  (`parseClaudeStatuslineTitle`), so untitled sessions still show something.
 
 **Codex:**
 

@@ -55,6 +55,25 @@ export const parseClaudeContext = (content: string): number | null => {
   return Math.min(100, Math.max(0, used));
 };
 
+// Fallback title when Claude hasn't set an OSC task title: the statusline prints
+// the session name (custom title / summary / first prompt) as its trailing
+// " | <session>" field. Fields before it (model | context | lines | project) are
+// fixed, so anything past the 4th separator is the session name.
+const STATUSLINE_SEP = " | ";
+const CONTEXT_LINE = /\/\s*[\d.]+[kmg]?\s*\(\d{1,3}%\)/i;
+const STATUSLINE_FIELDS = 5;
+
+export const parseClaudeStatuslineTitle = (content: string): string | null => {
+  const lines = content.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!CONTEXT_LINE.test(lines[i])) continue;
+    const fields = lines[i].trim().split(STATUSLINE_SEP);
+    if (fields.length < STATUSLINE_FIELDS) return null;
+    return fields.slice(STATUSLINE_FIELDS - 1).join(STATUSLINE_SEP).trim() || null;
+  }
+  return null;
+};
+
 // The title (from #{pane_title}) carries the task; strip the leading state
 // glyph. Claude's default "Claude Code" title means no task is set yet.
 export const parseClaudeSessionTitle = (title: string): string | null => {

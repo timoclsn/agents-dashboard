@@ -3,6 +3,7 @@ import {
   detectClaude,
   detectClaudeStatus,
   parseClaudeSessionTitle,
+  parseClaudeStatuslineTitle,
   parseClaudeContext,
 } from "./claude";
 import { detectCodex, detectCodexStatus } from "./codex";
@@ -137,6 +138,36 @@ describe("Claude", () => {
       expect(parseClaudeContext("Opus 4.8 (xhigh) working on something")).toBe(
         null,
       );
+    });
+  });
+
+  describe("parseClaudeStatuslineTitle", () => {
+    test("returns the session name from the statusline's trailing field", () => {
+      expect(
+        parseClaudeStatuslineTitle(
+          "Opus 4.8 (xhigh) | 48k/1M (5%) | +0/-0 | agents-dashboard:main | Redesign the TUI",
+        ),
+      ).toBe("Redesign the TUI");
+    });
+
+    test("rejoins a session name that itself contains the separator", () => {
+      expect(
+        parseClaudeStatuslineTitle(
+          "Opus 4.8 | 48k/1M (5%) | +0/-0 | dir:main | fix a | b thing",
+        ),
+      ).toBe("fix a | b thing");
+    });
+
+    test("returns null when the statusline has no session field", () => {
+      expect(
+        parseClaudeStatuslineTitle(
+          "Opus 4.8 (xhigh) | 48k/1M (5%) | +0/-0 | agents-dashboard:main",
+        ),
+      ).toBe(null);
+    });
+
+    test("returns null when no statusline is present", () => {
+      expect(parseClaudeStatuslineTitle("some output\n❯ ")).toBe(null);
     });
   });
 });
