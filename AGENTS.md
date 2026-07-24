@@ -145,11 +145,14 @@ TUI renders: **repo → checkout → agent**.
 
 Each tile shows a GitHub badge (` #<number>`) in its top-right when the checkout's
 branch has a PR, coloured by state: **draft** (grey), **open / ready** (green),
-**merged** (purple), **closed** (red). The badge replaces the branch text.
+**merged** (purple), **closed** (red). The badge replaces the branch text. After it
+come a **CI glyph** (`✓` passing / `✗` failing / `•` pending, from `statusCheckRollup`)
+and a **review glyph** when action is needed (`!` changes requested, `?` review
+required, from `reviewDecision`).
 
-- `gh pr list --head <branch> --state all` runs with `cwd` = the checkout path, so
-  `gh` resolves the right repo/host (works in linked worktrees too). Missing `gh`,
-  no auth, or no PR all resolve to "no badge".
+- `gh pr list --head <branch> --state all --json …,reviewDecision,statusCheckRollup`
+  runs with `cwd` = the checkout path, so `gh` resolves the right repo/host (works in
+  linked worktrees too). Missing `gh`, no auth, or no PR all resolve to "no badge".
 - gh hits the network, so results are cached 60s keyed by `path + branch` and
   refreshed in the background — decoupled from the 500ms poll. The TUI calls
   `refreshPrs()` on an interval and bumps a tick to re-render; tiles read the cache
@@ -180,10 +183,18 @@ tiles; worktrees whose repo has no live session collect in a final `not open` ro
 - **Vertical follow**: a ref on the selected row + `scrollRef.current.scrollBy()`
   (using `viewport.y/height` vs `row.y/height`) keeps the selected repo in view.
 - **Keys arrive two ways**: arrows/`return`/`escape` as `key.name`; plain letters
-  (`j k h l q`) as `key.sequence` (guard `!ctrl && !meta`). `^x` is `ctrl + name "x"`.
+  (`j k h l n q`) as `key.sequence` (guard `!ctrl && !meta`).
+- **Context % remaining**: Claude rows show the context window remaining, parsed
+  from the statusline usage (`<used>/<total> (n%)` → `100 − n`) by
+  `parseClaudeContext` in `claude.ts`. Coloured dim / amber / red as it runs low;
+  hidden for non-Claude agents or when no statusline is on screen.
+- **Needs-you band**: a pinned strip above the grid lists every blocked agent
+  across all repos (so it stays visible when scrolled off). Clicking an entry jumps
+  to its session; `n` cycles the selection through blocked checkouts.
 - Keybindings: `j/k` (or ↑/↓) move between repo rows; `h/l` (or ←/→) move between
-  checkouts in the current row; `Enter` switches to the checkout's session at
-  window `3` (the agents window) or opens a not-open worktree; `q`/`Esc` quit.
+  checkouts in the current row; `n` cycles blocked checkouts; `Enter` switches to
+  the checkout's session at window `3` (the agents window) or opens a not-open
+  worktree; `q`/`Esc` quit.
 
 ## CLI Flags
 
