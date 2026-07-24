@@ -33,6 +33,7 @@ const mockAgent = ({
   gitBranch: branch,
   sessionTitle: title,
   attached,
+  contextPercent: null,
 });
 
 const DEV = "/Users/timo/Developer";

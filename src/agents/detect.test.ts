@@ -3,6 +3,7 @@ import {
   detectClaude,
   detectClaudeStatus,
   parseClaudeSessionTitle,
+  parseClaudeContext,
 } from "./claude";
 import { detectCodex, detectCodexStatus } from "./codex";
 import { detectOpenCode, detectOpenCodeStatus } from "./opencode";
@@ -116,6 +117,26 @@ describe("Claude", () => {
     test("returns null for a title without a state glyph", () => {
       expect(parseClaudeSessionTitle("timobook")).toBe(null);
       expect(parseClaudeSessionTitle(":/Users/timo/dev")).toBe(null);
+    });
+  });
+
+  describe("parseClaudeContext", () => {
+    test("returns remaining percent from the statusline usage", () => {
+      expect(
+        parseClaudeContext("Opus 4.8 (xhigh) | 48k/1M (5%) | +0/-0 | dir:main"),
+      ).toBe(95);
+      expect(parseClaudeContext("… 900k/1M (90%) …")).toBe(10);
+    });
+
+    test("returns null when no context usage is present", () => {
+      expect(parseClaudeContext("❯ ")).toBe(null);
+      expect(parseClaudeContext("")).toBe(null);
+    });
+
+    test("ignores parenthized values that are not a token percentage", () => {
+      expect(parseClaudeContext("Opus 4.8 (xhigh) working on something")).toBe(
+        null,
+      );
     });
   });
 });

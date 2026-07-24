@@ -41,6 +41,20 @@ export const detectClaudeStatus = (
   return WORKING.test(content.slice(-STATUS_SCAN_CHARS)) ? "working" : "idle";
 };
 
+// Claude Code's statusline prints the context window as "<used>/<total> (<n>%)"
+// (see the user's statusline.ts), where n is the percentage *used*. Return the
+// percentage *remaining* (100 − used), or null when no statusline is on screen.
+const CONTEXT_USAGE = /\/\s*[\d.]+[kmg]?\s*\((\d{1,3})%\)/gi;
+
+export const parseClaudeContext = (content: string): number | null => {
+  const matches = [...content.matchAll(CONTEXT_USAGE)];
+  const last = matches[matches.length - 1];
+  if (!last) return null;
+  const used = parseInt(last[1], 10);
+  if (Number.isNaN(used)) return null;
+  return Math.min(100, Math.max(0, 100 - used));
+};
+
 // The title (from #{pane_title}) carries the task; strip the leading state
 // glyph. Claude's default "Claude Code" title means no task is set yet.
 export const parseClaudeSessionTitle = (title: string): string | null => {

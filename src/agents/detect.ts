@@ -29,6 +29,8 @@ export interface Agent {
   gitBranch: string | null;
   sessionTitle: string | null;
   attached: boolean;
+  // Percentage of context window remaining (Claude only; null otherwise).
+  contextPercent: number | null;
 }
 import {
   listPanes,
@@ -40,6 +42,7 @@ import {
   detectClaude,
   detectClaudeStatus,
   parseClaudeSessionTitle,
+  parseClaudeContext,
 } from "./claude";
 import {
   detectCodex,
@@ -164,6 +167,8 @@ const buildAgents = async (panes: PaneInfo[]): Promise<Agent[]> => {
     const topContent =
       agentType === "opencode" ? await capturePaneTop(target) : "";
 
+    const status = detectStatus(pane, content, agentType);
+
     agents.push({
       target,
       session: pane.session,
@@ -171,11 +176,13 @@ const buildAgents = async (panes: PaneInfo[]): Promise<Agent[]> => {
       window: pane.window,
       pane: pane.pane,
       type: agentType,
-      status: detectStatus(pane, content, agentType),
+      status,
       path: pane.path,
       gitBranch: branchMap.get(pane.path) ?? null,
       sessionTitle: parseSessionTitle({ pane, content, topContent, agentType }),
       attached: pane.attached,
+      contextPercent:
+        agentType === "claude" ? parseClaudeContext(content) : null,
     });
   }
 
