@@ -12,12 +12,14 @@ const STAGGER_DELAY = 50;
 
 const SPINNER_FRAMES = ["⣷", "⣯", "⣟", "⡿", "⢿", "⣻", "⣽", "⣾"];
 const IDLE_ICON = "•";
+const BLOCKED_ICON = "◼";
 
 const COLORS = {
   bg: "transparent",
   text: "#e2e2e2",
   textSecondary: "#a0a0a0",
   working: "#818cf8",
+  blocked: "#f59e0b",
   idle: "#e2e2e2",
   border: "#606060",
   borderDim: "#484848",
@@ -156,7 +158,14 @@ const truncateSessionTitle = (title: string): string => {
 const AgentRow = ({ agent, selected, isLast, onClick }: AgentRowProps) => {
   const paneRef = `${agent.window}.${agent.pane}`;
   const isWorking = agent.status === "working";
-  const icon = useSpinner(isWorking);
+  const isBlocked = agent.status === "blocked";
+  const spinner = useSpinner(isWorking);
+  const icon = isBlocked ? BLOCKED_ICON : spinner;
+  const iconColor = isBlocked
+    ? COLORS.blocked
+    : isWorking
+      ? COLORS.working
+      : COLORS.text;
 
   const treeChar = isLast ? "└" : "├";
 
@@ -181,13 +190,15 @@ const AgentRow = ({ agent, selected, isLast, onClick }: AgentRowProps) => {
       <text style={{ fg: COLORS.borderDim }}>{treeChar}─</text>
       <text
         style={{
-          fg: isWorking ? COLORS.working : COLORS.text,
+          fg: iconColor,
           width: 2,
         }}
       >
         {icon}
       </text>
-      <text style={{ fg: COLORS.text }}>{title}</text>
+      <text style={{ fg: isBlocked ? COLORS.blocked : COLORS.text }}>
+        {title}
+      </text>
       <text style={{ fg: COLORS.border }}> · </text>
       <text style={{ fg: COLORS.textSecondary }}>{agent.type}</text>
       <text style={{ fg: COLORS.borderDim }}>{`  ${paneRef}`}</text>

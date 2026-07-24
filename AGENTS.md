@@ -60,22 +60,40 @@ Child process detection is reliable even when pane content scrolls - the process
 
 ### Status Detection
 
-**Claude:**
+Status is `idle | working | blocked`. **Blocked** means the agent is waiting on
+the user (permission/confirmation prompt) — the signal a monitoring dashboard
+most needs to surface.
 
-- **Working**: Status line in content (`· Scampering…`, `✽ Pontificating…`, `Running…`)
-- **Idle**: Everything else (default)
+**Prefer the terminal title over pane content.** Agents set their terminal
+title via OSC escape sequences, which tmux exposes as `#{pane_title}` (already
+captured into `PaneInfo.title`). The title encodes both state and task, is
+robust to scrollback, and needs no `capture-pane`. This mirrors how
+[herdr](https://github.com/badlogic/herdr) detects state via an `osc_title`
+region. Content scanning remains a fallback.
+
+**Claude** (`#{pane_title}` = `<glyph> <task>`, e.g. `⠋ Refactor auth`):
+
+- **Working**: leading braille spinner glyph (U+2800–U+28FF) in title
+- **Blocked**: permission prompt (`Do you want to…` + `Yes`/`❯`) in bottom lines
+- **Idle**: leading `✳` (U+2733) glyph in title
+- Fallback: content spinner (`· Scampering…`, `Running…`) → working, else idle
+- **Title**: strip the leading glyph from `#{pane_title}`; `✳ Claude Code`
+  (the default, no task) → `null`
 
 **Codex:**
 
-- **Working**: `esc to interrupt` in content
-- **Idle**: Everything else (default)
+- **Blocked**: `Action Required` in title, or approval prompt in content
+- **Working**: braille spinner in title, or `esc to interrupt` in content
+- **Idle**: everything else
 
-**OpenCode:**
+**OpenCode** (no OSC title state — content only):
 
+- **Blocked**: `Permission required` in content
 - **Working**: `esc interrupt` in content
-- **Idle**: Everything else (default)
+- **Idle**: everything else
 
-**Detection Philosophy**: Only check for definitive "working" indicators. Default to idle otherwise. This is simpler and more reliable than trying to enumerate all possible idle states.
+**Detection Philosophy**: Check for definitive `working`/`blocked` indicators;
+default to `idle`. Simpler and more reliable than enumerating all idle states.
 
 ### Tmux Data Format
 
@@ -125,7 +143,7 @@ quickly from the dashboard via the user's `tmux-sessionizer` script.
 │ │ │ │        └── Tmux target (session:window.pane)
 │ │ │ └── Agent type
 │ │ └── Type icon (◆=claude, ◇=codex, ○=opencode)
-│ └── Status (▶=working, ⏸=idle)
+│ └── Status (▶=working, ⏸=idle, ◼=blocked/waiting on user)
 └── Attached session marker
 ```
 

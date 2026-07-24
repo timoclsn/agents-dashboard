@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { detectClaude, detectClaudeStatus } from "./claude";
+import {
+  detectClaude,
+  detectClaudeStatus,
+  parseClaudeSessionTitle,
+} from "./claude";
 import { detectCodex, detectCodexStatus } from "./codex";
 import { detectOpenCode, detectOpenCodeStatus } from "./opencode";
 import type { PaneInfo } from "../tmux/client";
@@ -67,6 +71,52 @@ describe("Claude", () => {
 `;
       expect(detectClaudeStatus("", content)).toBe("working");
     });
+
+    test("detects working from braille spinner in title", () => {
+      expect(detectClaudeStatus("⠋ Refactor auth", "")).toBe("working");
+      expect(detectClaudeStatus("⠂ Improve detection", "")).toBe("working");
+    });
+
+    test("detects idle from ✳ glyph in title", () => {
+      expect(detectClaudeStatus("✳ Claude Code", "")).toBe("idle");
+      expect(detectClaudeStatus("✳ Refactor auth", "")).toBe("idle");
+    });
+
+    test("title spinner beats stale prompt in scrollback", () => {
+      expect(detectClaudeStatus("⠹ Working", "Do you want to proceed?\n❯ 1. Yes")).toBe(
+        "working",
+      );
+    });
+
+    test("detects blocked from permission prompt", () => {
+      const content = "Edit file.ts\nDo you want to proceed?\n❯ 1. Yes\n  2. No";
+      expect(detectClaudeStatus("✳ Refactor auth", content)).toBe("blocked");
+    });
+
+    test("does not treat conversational prose as blocked", () => {
+      const content = "Done. Do you want me to proceed? If yes, just say so.";
+      expect(detectClaudeStatus("✳ Refactor auth", content)).toBe("idle");
+    });
+  });
+
+  describe("parseClaudeSessionTitle", () => {
+    test("strips the leading state glyph", () => {
+      expect(parseClaudeSessionTitle("⠋ Refactor auth")).toBe("Refactor auth");
+      expect(parseClaudeSessionTitle("✳ Refactor auth")).toBe("Refactor auth");
+    });
+
+    test("returns null for the default title", () => {
+      expect(parseClaudeSessionTitle("✳ Claude Code")).toBe(null);
+    });
+
+    test("returns null when empty", () => {
+      expect(parseClaudeSessionTitle("")).toBe(null);
+    });
+
+    test("returns null for a title without a state glyph", () => {
+      expect(parseClaudeSessionTitle("timobook")).toBe(null);
+      expect(parseClaudeSessionTitle(":/Users/timo/dev")).toBe(null);
+    });
   });
 });
 
@@ -87,20 +137,34 @@ describe("Codex", () => {
 
   describe("detectCodexStatus", () => {
     test("detects working from esc to interrupt", () => {
-      expect(detectCodexStatus("(2m 56s • esc to interrupt)")).toBe("working");
+      expect(detectCodexStatus("", "(2m 56s • esc to interrupt)")).toBe(
+        "working",
+      );
       expect(
-        detectCodexStatus("Planning something (1m • esc to interrupt)"),
+        detectCodexStatus("", "Planning something (1m • esc to interrupt)"),
       ).toBe("working");
       expect(
-        detectCodexStatus("• Running sleep 600\n(5s • esc to interrupt)"),
+        detectCodexStatus("", "• Running sleep 600\n(5s • esc to interrupt)"),
       ).toBe("working");
     });
 
     test("detects idle when no working indicator", () => {
-      expect(detectCodexStatus("› Run /review")).toBe("idle");
-      expect(detectCodexStatus("Done — completed task\n› ")).toBe("idle");
-      expect(detectCodexStatus("99% context left")).toBe("idle");
-      expect(detectCodexStatus("")).toBe("idle");
+      expect(detectCodexStatus("", "› Run /review")).toBe("idle");
+      expect(detectCodexStatus("", "Done — completed task\n› ")).toBe("idle");
+      expect(detectCodexStatus("", "99% context left")).toBe("idle");
+      expect(detectCodexStatus("", "")).toBe("idle");
+    });
+
+    test("detects working from spinner in title", () => {
+      expect(detectCodexStatus("⠹ Codex", "")).toBe("working");
+    });
+
+    test("detects blocked from Action Required title", () => {
+      expect(detectCodexStatus("Action Required — Codex", "")).toBe("blocked");
+    });
+
+    test("detects blocked from approval prompt in content", () => {
+      expect(detectCodexStatus("", "allow command?\n[y/n]")).toBe("blocked");
     });
   });
 });
@@ -132,6 +196,12 @@ describe("OpenCode", () => {
       expect(detectOpenCodeStatus("↑↓ select  enter submit")).toBe("idle");
       expect(detectOpenCodeStatus("Build  GPT-5.2-Codex")).toBe("idle");
       expect(detectOpenCodeStatus("")).toBe("idle");
+    });
+
+    test("detects blocked from permission required", () => {
+      expect(detectOpenCodeStatus("△ Permission required\nesc dismiss")).toBe(
+        "blocked",
+      );
     });
   });
 });

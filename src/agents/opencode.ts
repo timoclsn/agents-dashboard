@@ -1,8 +1,10 @@
 import type { PaneInfo } from "../tmux/client";
-import { STATUS_SCAN_CHARS } from "./detect";
+import { STATUS_SCAN_CHARS, type AgentStatus } from "./detect";
 
 // "esc interrupt" only shows during active work
 const WORKING = /esc interrupt/i;
+// OpenCode shows "△ Permission required" while waiting on the user.
+const BLOCKED = /permission required/i;
 
 export const detectOpenCode = (pane: PaneInfo): boolean => {
   const childCmdsLower = pane.childCommands
@@ -11,8 +13,9 @@ export const detectOpenCode = (pane: PaneInfo): boolean => {
   return childCmdsLower.includes("opencode");
 };
 
-export const detectOpenCodeStatus = (content: string): "idle" | "working" => {
+export const detectOpenCodeStatus = (content: string): AgentStatus => {
   const lastLines = content.slice(-STATUS_SCAN_CHARS);
+  if (BLOCKED.test(lastLines)) return "blocked";
   if (WORKING.test(lastLines)) return "working";
   return "idle";
 };

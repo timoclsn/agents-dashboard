@@ -1,8 +1,16 @@
 import type { PaneInfo } from "../tmux/client";
-import { STATUS_SCAN_CHARS } from "./detect";
+import { STATUS_SCAN_CHARS, type AgentStatus } from "./detect";
 
-// "esc to interrupt" only shows during active work
+// Codex encodes state in the terminal title (tmux #{pane_title}): a braille
+// spinner while working, "Action Required" when it needs the user.
+const TITLE_WORKING = /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/;
+const TITLE_BLOCKED = /action required/i;
+
+// Content fallbacks for when the title carries no state.
+// "esc to interrupt" only shows during active work.
 const WORKING = /esc to interrupt/i;
+const BLOCKED =
+  /press enter to confirm or esc to cancel|allow command\?|enter to submit answer|\[y\/n\]/i;
 
 export const detectCodex = (pane: PaneInfo): boolean => {
   const childCmdsLower = pane.childCommands
@@ -11,8 +19,14 @@ export const detectCodex = (pane: PaneInfo): boolean => {
   return childCmdsLower.includes("codex");
 };
 
-export const detectCodexStatus = (content: string): "idle" | "working" => {
+export const detectCodexStatus = (
+  title: string,
+  content: string,
+): AgentStatus => {
+  if (TITLE_BLOCKED.test(title)) return "blocked";
+  if (TITLE_WORKING.test(title)) return "working";
   const lastLines = content.slice(-STATUS_SCAN_CHARS);
+  if (BLOCKED.test(lastLines)) return "blocked";
   if (WORKING.test(lastLines)) return "working";
   return "idle";
 };

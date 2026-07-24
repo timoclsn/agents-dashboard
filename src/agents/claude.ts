@@ -1,9 +1,25 @@
 import type { PaneInfo } from "../tmux/client";
-import { STATUS_SCAN_CHARS } from "./detect";
+import {
+  bottomNonEmptyLines,
+  STATUS_SCAN_CHARS,
+  type AgentStatus,
+} from "./detect";
 
-// Working indicators in content:
-// - Status line: "· Scampering…", "✽ Pontificating…", etc.
-// - Command running: "Running…" or "⎿  Running…"
+// Claude Code sets the terminal title (exposed by tmux as #{pane_title}) to
+// encode both its state and the current task, e.g. "⠋ Refactor auth" while
+// working, "✳ Refactor auth" when idle. The leading glyph is a braille spinner
+// (U+2800–U+28FF) while working and ✳ (U+2733) when idle.
+const TITLE_WORKING = /^[⠀-⣿]\s/;
+const TITLE_IDLE = /^✳\s/;
+const TITLE_GLYPH = /^[⠀-⣿✳]\s+/;
+const DEFAULT_TITLE = "Claude Code";
+
+// A permission/confirmation prompt means Claude is waiting on the user. The
+// interactive prompt always renders a numbered selector ("❯ 1. Yes"); keying on
+// that line avoids matching the agent's own prose like "…proceed? If yes, …".
+const BLOCKED = /^\s*❯?\s*1\.\s*yes\b/im;
+
+// Fallback content scan for when the title carries no state glyph.
 const WORKING = /[·✢✳✶✻✽*]\s*\w+…|Running…/;
 
 export const detectClaude = (pane: PaneInfo): boolean => {
@@ -14,27 +30,24 @@ export const detectClaude = (pane: PaneInfo): boolean => {
 };
 
 export const detectClaudeStatus = (
-  _title: string,
+  title: string,
   content: string,
-): "idle" | "working" => {
-  const lastLines = content.slice(-STATUS_SCAN_CHARS);
-  if (WORKING.test(lastLines)) {
-    return "working";
-  }
-  return "idle";
+): AgentStatus => {
+  // An active spinner in the title is the strongest signal: it beats any
+  // prompt-like text left in the scrollback.
+  if (TITLE_WORKING.test(title)) return "working";
+  if (BLOCKED.test(bottomNonEmptyLines(content, 8))) return "blocked";
+  if (TITLE_IDLE.test(title)) return "idle";
+  return WORKING.test(content.slice(-STATUS_SCAN_CHARS)) ? "working" : "idle";
 };
 
-// Parse session title from the status line. The title is the last pipe-separated
-// segment when there are 5+ segments (model | context | changes | project | title)
-const STATUS_LINE_PATTERN = /^\s*(?:\S+\s+\S+)\s*\|.*\|.*\|.*\|\s*(.+?)\s*$/;
-
-export const parseClaudeSessionTitle = (content: string): string | null => {
-  const lines = content.split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const match = STATUS_LINE_PATTERN.exec(lines[i]);
-    if (match) {
-      return match[1];
-    }
-  }
-  return null;
+// The title (from #{pane_title}) carries the task; strip the leading state
+// glyph. Claude's default "Claude Code" title means no task is set yet.
+export const parseClaudeSessionTitle = (title: string): string | null => {
+  // Only trust titles Claude authored: those carry a leading state glyph. A
+  // bare shell/hostname title (e.g. before Claude sets one) is not a task.
+  if (!TITLE_GLYPH.test(title)) return null;
+  const stripped = title.replace(TITLE_GLYPH, "").trim();
+  if (!stripped || stripped === DEFAULT_TITLE) return null;
+  return stripped;
 };

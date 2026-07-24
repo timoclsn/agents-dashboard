@@ -12,6 +12,7 @@ const TYPE_ICONS: Record<Agent["type"], string> = {
 const STATUS_ICONS: Record<Agent["status"], string> = {
   idle: "⏸",
   working: "▶",
+  blocked: "◼",
 };
 
 const truncate = (str: string, maxLen: number): string => {

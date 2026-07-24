@@ -1,10 +1,21 @@
 import type { PaneInfo } from "../tmux/client";
 
 export type AgentType = "claude" | "codex" | "opencode" | "unknown";
-export type AgentStatus = "idle" | "working";
+export type AgentStatus = "idle" | "working" | "blocked";
 
 // How many characters from the end of pane content to check for status indicators
 export const STATUS_SCAN_CHARS = 1000;
+
+// The last `count` non-empty lines of pane content, joined. Scoping matches to
+// the visible bottom of the screen avoids false positives from scrollback.
+export const bottomNonEmptyLines = (content: string, count: number): string => {
+  const lines = content.split("\n");
+  const picked: string[] = [];
+  for (let i = lines.length - 1; i >= 0 && picked.length < count; i--) {
+    if (lines[i].trim().length > 0) picked.unshift(lines[i]);
+  }
+  return picked.join("\n");
+};
 
 export interface Agent {
   target: string;
@@ -53,13 +64,19 @@ interface CacheEntry<T> {
 
 const gitBranchCache = new Map<string, CacheEntry<string | null>>();
 
-const parseSessionTitle = (
-  content: string,
-  topContent: string,
-  agentType: AgentType,
-): string | null => {
+const parseSessionTitle = ({
+  pane,
+  content,
+  topContent,
+  agentType,
+}: {
+  pane: PaneInfo;
+  content: string;
+  topContent: string;
+  agentType: AgentType;
+}): string | null => {
   if (agentType === "claude") {
-    return parseClaudeSessionTitle(content);
+    return parseClaudeSessionTitle(pane.title);
   }
   if (agentType === "codex") {
     return parseCodexSessionTitle(content);
@@ -87,7 +104,7 @@ const detectStatus = (
     return detectClaudeStatus(pane.title, content);
   }
   if (agentType === "codex") {
-    return detectCodexStatus(content);
+    return detectCodexStatus(pane.title, content);
   }
   if (agentType === "opencode") {
     return detectOpenCodeStatus(content);
@@ -157,7 +174,7 @@ const buildAgents = async (panes: PaneInfo[]): Promise<Agent[]> => {
       status: detectStatus(pane, content, agentType),
       path: pane.path,
       gitBranch: branchMap.get(pane.path) ?? null,
-      sessionTitle: parseSessionTitle(content, topContent, agentType),
+      sessionTitle: parseSessionTitle({ pane, content, topContent, agentType }),
       attached: pane.attached,
     });
   }
