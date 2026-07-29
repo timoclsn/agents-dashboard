@@ -6,8 +6,22 @@ import {
 } from "@opentui/react";
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core";
 import { pollDashboard, type Agent } from "../agents/detect";
-import { groupByRepo, type Checkout, type RepoGroup } from "../agents/group";
+import { groupByRepo, type Checkout } from "../agents/group";
 import { focusPane, openWorktree } from "../tmux/client";
+import {
+  buildRows,
+  clampSelection,
+  lineWidthFor,
+  moveDown,
+  moveLeft,
+  moveRight,
+  moveUp,
+  tilesPerLine,
+  TILE_GAP,
+  TILE_WIDTH,
+  type RenderRow,
+  type Selection,
+} from "./grid";
 import {
   refreshPrs,
   getCachedPr,
@@ -27,11 +41,6 @@ const BLOCKED_ICON = "◼";
 // The agents window in every session (tmux-sessionizer convention).
 const AGENTS_WINDOW = 3;
 
-const TILE_WIDTH = 38;
-const TILE_GAP = 1;
-// A narrow full-height tile holding the scroll chevron, plus the row gap.
-const ARROW_TILE_WIDTH = 3;
-const ARROW_GUTTER = ARROW_TILE_WIDTH + TILE_GAP;
 const MAX_TASK = 25;
 const MAX_NAME = 19;
 const MAX_BRANCH = 10;
@@ -108,37 +117,6 @@ const useSpinner = (active: boolean) => {
   return active ? SPINNER_FRAMES[frame] : IDLE_ICON;
 };
 
-// A row of the grid: one repo (base + its worktrees), or the trailing "not open"
-// row of worktrees whose repo has no live session.
-interface RenderRow {
-  key: string;
-  kind: "repo" | "disk";
-  repo?: RepoGroup;
-  checkouts: Checkout[];
-}
-
-// Repos stack vertically; each repo's checkouts lay out horizontally in one row.
-// Not-open worktrees trail their own repo's row; worktrees whose repo has no live
-// session collect in a final "not open" row.
-const buildRows = (repos: RepoGroup[]): RenderRow[] => {
-  const rows: RenderRow[] = [];
-
-  for (const repo of repos) {
-    if (!repo.hasOpenAgents) continue;
-    rows.push({ key: repo.key, kind: "repo", repo, checkouts: repo.checkouts });
-  }
-
-  const disk = repos
-    .filter((r) => !r.hasOpenAgents)
-    .flatMap((r) => r.checkouts)
-    .sort((a, b) => `${a.org}/${a.dir}`.localeCompare(`${b.org}/${b.dir}`));
-  if (disk.length) {
-    rows.push({ key: " not-open", kind: "disk", checkouts: disk });
-  }
-
-  return rows;
-};
-
 const AgentLine = ({ agent }: { agent: Agent }) => {
   const isBlocked = agent.status === "blocked";
   const spinner = useSpinner(agent.status === "working");
@@ -171,6 +149,7 @@ interface CheckoutTileProps {
   checkout: Checkout;
   showRepoPath: boolean;
   selected: boolean;
+  tileRef?: Ref<BoxRenderable>;
   onActivate: () => void;
 }
 
@@ -178,6 +157,7 @@ const CheckoutTile = ({
   checkout,
   showRepoPath,
   selected,
+  tileRef,
   onActivate,
 }: CheckoutTileProps) => {
   const borderColor = selected
@@ -197,6 +177,7 @@ const CheckoutTile = ({
 
   return (
     <box
+      ref={tileRef}
       onMouseUp={onActivate}
       style={{
         width: TILE_WIDTH,
@@ -289,32 +270,14 @@ const RowHeader = ({ row }: { row: RenderRow }) => {
   );
 };
 
-// A full-height bordered mini-tile holding the chevron, sitting where the hidden
-// tile would be — so "there's more this way" reads at tile height, not as a speck.
-const ScrollArrow = ({ dir }: { dir: "left" | "right" }) => (
-  <box
-    style={{
-      flexShrink: 0,
-      width: ARROW_TILE_WIDTH,
-      border: true,
-      borderStyle: "rounded",
-      borderColor: COLORS.borderDim,
-      flexDirection: "column",
-      justifyContent: "center",
-      alignItems: "center",
-    }}
-  >
-    <text style={{ fg: COLORS.dim }}>{dir === "left" ? "‹" : "›"}</text>
-  </box>
-);
-
 interface RowViewProps {
   row: RenderRow;
   isSelectedRow: boolean;
   selCol: number;
-  contentWidth: number;
+  lineWidth: number;
   isFirst: boolean;
   rowRef?: Ref<BoxRenderable>;
+  tileRef?: Ref<BoxRenderable>;
   onActivate: (col: number) => void;
 }
 
@@ -322,49 +285,40 @@ const RowView = ({
   row,
   isSelectedRow,
   selCol,
-  contentWidth,
+  lineWidth,
   isFirst,
   rowRef,
+  tileRef,
   onActivate,
-}: RowViewProps) => {
-  const len = row.checkouts.length;
-  const perTile = TILE_WIDTH + TILE_GAP;
-  const fitsAll = Math.max(1, Math.floor((contentWidth + TILE_GAP) / perTile));
-  // When a row overflows, keep gutter room on both sides for the chevrons.
-  const budget = len > fitsAll ? contentWidth - ARROW_GUTTER * 2 : contentWidth;
-  const visibleCount = Math.max(1, Math.floor((budget + TILE_GAP) / perTile));
-
-  let start = 0;
-  if (isSelectedRow && selCol >= visibleCount) {
-    start = Math.min(selCol - visibleCount + 1, Math.max(0, len - visibleCount));
-  }
-  const end = Math.min(len, start + visibleCount);
-
-  return (
+}: RowViewProps) => (
+  <box
+    ref={rowRef}
+    style={{ flexDirection: "column", marginTop: isFirst ? 0 : 1 }}
+  >
+    <RowHeader row={row} />
+    {/* An explicit width makes wrapping land exactly on `tilesPerLine`, so the
+        rendered grid matches what j/k navigate. */}
     <box
-      ref={rowRef}
-      style={{ flexDirection: "column", marginTop: isFirst ? 0 : 1 }}
+      style={{
+        flexDirection: "row",
+        flexWrap: "wrap",
+        width: lineWidth,
+        columnGap: TILE_GAP,
+      }}
     >
-      <RowHeader row={row} />
-      <box style={{ flexDirection: "row", gap: TILE_GAP }}>
-        {start > 0 && <ScrollArrow dir="left" />}
-        {row.checkouts.slice(start, end).map((checkout, i) => {
-          const col = start + i;
-          return (
-            <CheckoutTile
-              key={checkout.key}
-              checkout={checkout}
-              showRepoPath={row.kind === "disk"}
-              selected={isSelectedRow && col === selCol}
-              onActivate={() => onActivate(col)}
-            />
-          );
-        })}
-        {end < len && <ScrollArrow dir="right" />}
-      </box>
+      {row.checkouts.map((checkout, col) => (
+        <CheckoutTile
+          key={checkout.key}
+          checkout={checkout}
+          showRepoPath={row.kind === "disk"}
+          selected={isSelectedRow && col === selCol}
+          tileRef={isSelectedRow && col === selCol ? tileRef : undefined}
+          onActivate={() => onActivate(col)}
+        />
+      ))}
     </box>
-  );
-};
+  </box>
+);
 
 interface HeaderProps {
   totals: { agents: number; blocked: number; working: number; idle: number };
@@ -438,11 +392,8 @@ const NeedsYouBand = ({
 
 const Footer = () => (
   <box style={{ flexDirection: "row", marginTop: 1 }}>
-    <text style={{ fg: COLORS.faint }}>j/k</text>
-    <text style={{ fg: COLORS.dim }}> rows</text>
-    <text style={{ fg: COLORS.borderDim }}> · </text>
-    <text style={{ fg: COLORS.faint }}>h/l</text>
-    <text style={{ fg: COLORS.dim }}> checkout</text>
+    <text style={{ fg: COLORS.faint }}>hjkl</text>
+    <text style={{ fg: COLORS.dim }}> move</text>
     <text style={{ fg: COLORS.borderDim }}> · </text>
     <text style={{ fg: COLORS.faint }}>⏎</text>
     <text style={{ fg: COLORS.dim }}> open</text>
@@ -518,11 +469,6 @@ const LoadingState = () => {
   );
 };
 
-interface Selection {
-  row: number;
-  col: number;
-}
-
 interface AppProps {
   forceLoading?: boolean;
 }
@@ -541,6 +487,7 @@ export const App = ({ forceLoading = false }: AppProps) => {
   const { width } = useTerminalDimensions();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const selectedRowRef = useRef<BoxRenderable>(null);
+  const selectedTileRef = useRef<BoxRenderable>(null);
 
   const isLoading = !dataLoaded || !minTimeElapsed;
 
@@ -554,6 +501,8 @@ export const App = ({ forceLoading = false }: AppProps) => {
   ].join("|");
 
   const contentWidth = Math.max(TILE_WIDTH, (width || 80) - 4);
+  const perLine = tilesPerLine(contentWidth);
+  const lineWidth = lineWidthFor(perLine);
 
   const blocked: BlockedItem[] = [];
   rows.forEach((row, ri) =>
@@ -645,28 +594,29 @@ export const App = ({ forceLoading = false }: AppProps) => {
   // Keep the selection in bounds when the set of rows/checkouts changes.
   useEffect(() => {
     setSel((s) => {
-      if (rows.length === 0) return s.row === 0 && s.col === 0 ? s : { row: 0, col: 0 };
-      const row = Math.min(s.row, rows.length - 1);
-      const len = rows[row].checkouts.length;
-      const col = Math.min(s.col, Math.max(0, len - 1));
-      return row === s.row && col === s.col ? s : { row, col };
+      const next = clampSelection({ sel: s, rows });
+      return next.row === s.row && next.col === s.col ? s : next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowsSig]);
 
-  // Keep the selected row scrolled into view vertically.
+  // Keep the selection scrolled into view vertically. The bottom edge always
+  // follows the selected tile — a repo taller than the viewport must never scroll
+  // its own selection off screen — while the top edge reaches up to the repo
+  // header as long as the selection sits on the repo's first line.
   useEffect(() => {
     const box = scrollRef.current;
-    const rowEl = selectedRowRef.current;
-    if (!box || !rowEl) return;
+    const row = selectedRowRef.current;
+    const target = selectedTileRef.current ?? row;
+    if (!box || !target) return;
     const viewTop = box.viewport.y;
     const viewBottom = viewTop + box.viewport.height;
-    const rowTop = rowEl.y;
-    const rowBottom = rowTop + rowEl.height;
-    if (rowTop < viewTop) box.scrollBy({ x: 0, y: rowTop - viewTop });
-    else if (rowBottom > viewBottom) box.scrollBy({ x: 0, y: rowBottom - viewBottom });
+    const top = sel.col < perLine && row ? row.y : target.y;
+    const bottom = target.y + target.height;
+    if (top < viewTop) box.scrollBy({ x: 0, y: top - viewTop });
+    else if (bottom > viewBottom) box.scrollBy({ x: 0, y: bottom - viewBottom });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel.row, rowsSig]);
+  }, [sel.row, sel.col, perLine, rowsSig]);
 
   const activate = (row: number, col: number) => {
     setSel({ row, col });
@@ -690,30 +640,19 @@ export const App = ({ forceLoading = false }: AppProps) => {
     const letter = !key.ctrl && !key.meta ? key.sequence : undefined;
 
     if (key.name === "down" || letter === "j") {
-      setSel((s) => {
-        const row = Math.min(s.row + 1, rows.length - 1);
-        const len = rows[row]?.checkouts.length ?? 1;
-        return { row, col: Math.min(s.col, Math.max(0, len - 1)) };
-      });
+      setSel((s) => moveDown({ sel: s, rows, perLine }));
       return;
     }
     if (key.name === "up" || letter === "k") {
-      setSel((s) => {
-        const row = Math.max(s.row - 1, 0);
-        const len = rows[row]?.checkouts.length ?? 1;
-        return { row, col: Math.min(s.col, Math.max(0, len - 1)) };
-      });
+      setSel((s) => moveUp({ sel: s, rows, perLine }));
       return;
     }
     if (key.name === "right" || letter === "l") {
-      setSel((s) => {
-        const len = rows[s.row]?.checkouts.length ?? 1;
-        return { row: s.row, col: Math.min(s.col + 1, len - 1) };
-      });
+      setSel((s) => moveRight({ sel: s, rows, perLine }));
       return;
     }
     if (key.name === "left" || letter === "h") {
-      setSel((s) => ({ row: s.row, col: Math.max(s.col - 1, 0) }));
+      setSel((s) => moveLeft({ sel: s, rows, perLine }));
       return;
     }
     if (letter === "n") {
@@ -770,9 +709,10 @@ export const App = ({ forceLoading = false }: AppProps) => {
                 row={row}
                 isSelectedRow={rowIdx === sel.row}
                 selCol={sel.col}
-                contentWidth={contentWidth}
+                lineWidth={lineWidth}
                 isFirst={rowIdx === 0}
                 rowRef={rowIdx === sel.row ? selectedRowRef : undefined}
+                tileRef={rowIdx === sel.row ? selectedTileRef : undefined}
                 onActivate={(col) => activate(rowIdx, col)}
               />
             ))}

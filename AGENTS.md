@@ -19,7 +19,8 @@ bun test           # Run tests
 src/
 ├── index.tsx              # Entry point, CLI flag parsing
 ├── tui/
-│   └── app.tsx            # TUI components (OpenTUI React)
+│   ├── app.tsx            # TUI components (OpenTUI React)
+│   └── grid.ts            # Pure grid layout + selection movement (rows, wrapping, hjkl)
 ├── cli/
 │   └── output.ts          # CLI output formatting
 ├── tmux/
@@ -40,7 +41,8 @@ src/
 `pollDashboard()` in `detect.ts` is the single poll used by both TUI and CLI: it
 lists panes once, then builds agents and scans worktrees from the same pane data.
 The TUI then runs the flat `{agents, worktrees}` through `groupByRepo()`
-(`group.ts`) to build the repo → checkout → agent tree it renders; the CLI still
+(`group.ts`) to build the repo → checkout → agent tree, and `buildRows()`
+(`tui/grid.ts`) to lay that tree out as grid rows it renders; the CLI still
 prints the flat list.
 
 ### Key Dependencies
@@ -161,15 +163,18 @@ required, from `reviewDecision`).
   synchronously via `getCachedPr()`.
 - The icon is a Nerd Font glyph (`U+F09B`); it needs a patched font to render.
 
-## TUI Notes (`src/tui/app.tsx`)
+## TUI Notes (`src/tui/app.tsx`, `src/tui/grid.ts`)
 
-Design: a **fixed 2-D grid** (not responsive). Rows = repos stacked vertically;
-columns = a repo's checkouts (`main` + worktrees) laid out horizontally in a
-**non-wrapping** row. Each row is windowed to the terminal width and scrolls
-horizontally on its own; a full-height bordered arrow tile (`‹` / `›`) sits where
-the hidden tile would be, showing there's more that way. A repo's own not-open
-worktrees trail its row as ghost `⏎ open`
-tiles; worktrees whose repo has no live session collect in a final `not open` row.
+Design: a **2-D grid that wraps**. Rows = repos stacked vertically; a repo's
+checkouts (`main` + worktrees) flow horizontally and **wrap onto further lines**
+when the terminal is too narrow — nothing is ever hidden off to the side, the
+whole fleet is reachable by scrolling vertically. A repo's own not-open worktrees
+trail its row as ghost `⏎ open` tiles; worktrees whose repo has no live session
+collect in a final `not open` row.
+
+Everything positional lives in `grid.ts` (pure, unit-tested): `buildRows()`,
+`tilesPerLine()`/`lineWidthFor()`, and the selection moves
+(`moveUp/Down/Left/Right`, `clampSelection`). `app.tsx` only renders.
 
 - **Do NOT nest `<text>` inside `<text>`** - OpenTUI throws "TextNodeRenderable only accepts strings"
 - Use `<box style={{ flexDirection: "row" }}>` for horizontal layouts with multiple text elements
@@ -181,12 +186,17 @@ tiles; worktrees whose repo has no live session collect in a final `not open` ro
 - **Repo header badges count sessions (open checkouts) by status**, not agents, so
   the number matches the tiles on the row (e.g. `•3` = three idle checkouts). The
   top header still totals agents across the fleet.
-- **Horizontal scroll is windowing, not a scrollbox**: `buildRows()` + `RowView`
-  render only `visibleCount = ⌊width / (TILE_WIDTH+gap)⌋` tiles, shifting the start
-  so the selected column stays visible. `visibleCount` comes from
-  `useTerminalDimensions()` so it recomputes on resize.
-- **Vertical follow**: a ref on the selected row + `scrollRef.current.scrollBy()`
-  (using `viewport.y/height` vs `row.y/height`) keeps the selected repo in view.
+- **Wrapping is `flexWrap` with an explicit line width**: the tile container gets
+  `flexWrap: "wrap"` plus `width: lineWidthFor(perLine)` (only `columnGap`, so a
+  repo's lines sit flush and repos stay separated by their `marginTop`). The
+  explicit width makes wrapping land exactly on `perLine = tilesPerLine(width)`,
+  which is what `j`/`k` navigate — never let the two drift apart. `width` comes
+  from `useTerminalDimensions()`, so both recompute on resize.
+- **Vertical follow**: `scrollRef.current.scrollBy()` (using `viewport.y/height`
+  vs the target's `y/height`) keeps the selection in view. The bottom edge always
+  follows the **selected tile**, so a repo taller than the viewport can never
+  scroll its own selection off screen; the top edge reaches up to the repo row (so
+  the header comes in too) while the selection is on the repo's first line.
 - **Keys arrive two ways**: arrows/`return`/`escape` as `key.name`; plain letters
   (`j k h l n q`) as `key.sequence` (guard `!ctrl && !meta`).
 - **Context % used**: Claude rows show the context window used (matching Claude
@@ -196,8 +206,10 @@ tiles; worktrees whose repo has no live session collect in a final `not open` ro
 - **Needs-you band**: a pinned strip above the grid lists every blocked agent
   across all repos (so it stays visible when scrolled off). Clicking an entry jumps
   to its session; `n` cycles the selection through blocked checkouts.
-- Keybindings: `j/k` (or ↑/↓) move between repo rows; `h/l` (or ←/→) move between
-  checkouts in the current row; `n` cycles blocked checkouts; `Enter` switches to
+- Keybindings: `h/l` (or ←/→) step through a repo's checkouts in flow order,
+  crossing wrapped lines; `j/k` (or ↑/↓) move a line down/up **inside** a wrapped
+  repo and only jump to the next/previous repo from its last/first line, keeping
+  the lane (column position) where possible; `n` cycles blocked checkouts; `Enter` switches to
   the checkout's session at window `3` (the agents window) or opens a not-open
   worktree; `q`/`Esc` quit.
 
