@@ -31,7 +31,8 @@ src/
 │   ├── group.ts           # View-model: group agents+worktrees into repo→checkout→agent tree
 │   ├── claude.ts          # Claude-specific patterns
 │   ├── codex.ts           # Codex-specific patterns
-│   └── opencode.ts        # OpenCode-specific patterns
+│   ├── opencode.ts        # OpenCode-specific patterns
+│   └── pi.ts              # Pi-specific patterns
 ├── github/
 │   └── pr.ts              # Cached `gh pr list` lookup per checkout branch
 └── worktrees/
@@ -63,6 +64,7 @@ prints the flat list.
 | **Claude**   | `claude` in child commands   |
 | **Codex**    | `codex` in child commands    |
 | **OpenCode** | `opencode` in child commands |
+| **Pi**       | `pi` in child commands       |
 
 Child process detection is reliable even when pane content scrolls - the process tree always shows the running binary.
 
@@ -101,6 +103,14 @@ region. Content scanning remains a fallback.
 - **Blocked**: `Permission required` in content
 - **Working**: `esc interrupt` in content
 - **Idle**: everything else
+
+**Pi:**
+
+- **Working**: braille spinner in title (e.g. `titlebar-spinner` extension), or working indicator (`Working...`, `to interrupt`, `to cancel`, `── ⠹ Working ──`) in content
+- **Blocked**: confirmation / selector prompt (`↑↓ navigate`, `enter select`, `enter submit`, `allow command?`, `[y/n]`) in bottom lines
+- **Idle**: everything else
+- **Title**: session name from `pane_title` (`π - <session> - <cwd>`) or footer (`<cwd> • <session>`)
+- **Context % used**: parsed from footer (`<percent>%/<total>` → `n`)
 
 **Detection Philosophy**: Check for definitive `working`/`blocked` indicators;
 default to `idle`. Simpler and more reliable than enumerating all idle states.
@@ -199,10 +209,10 @@ Everything positional lives in `grid.ts` (pure, unit-tested): `buildRows()`,
   the header comes in too) while the selection is on the repo's first line.
 - **Keys arrive two ways**: arrows/`return`/`escape` as `key.name`; plain letters
   (`j k h l n q`) as `key.sequence` (guard `!ctrl && !meta`).
-- **Context % used**: Claude rows show the context window used (matching Claude
-  Code), parsed from the statusline usage (`<used>/<total> (n%)` → `n`) by
-  `parseClaudeContext` in `claude.ts`. Coloured dim / amber / red as it fills up;
-  hidden for non-Claude agents or when no statusline is on screen.
+- **Context % used**: Claude and Pi rows show the context window used,
+  parsed from the statusline/footer usage (`<used>/<total> (n%)` or `<n>%/<total>` → `n`) by
+  `parseClaudeContext` / `parsePiContext`. Coloured dim / amber / red as it fills up;
+  hidden for non-Claude/non-Pi agents or when no usage is on screen.
 - **Needs-you band**: a pinned strip above the grid lists every blocked agent
   across all repos (so it stays visible when scrolled off). Clicking an entry jumps
   to its session; `n` cycles the selection through blocked checkouts.
@@ -228,7 +238,7 @@ Everything positional lives in `grid.ts` (pure, unit-tested): `buildRows()`,
 │ │ │ │        │              └── Project name (from path)
 │ │ │ │        └── Tmux target (session:window.pane)
 │ │ │ └── Agent type
-│ │ └── Type icon (◆=claude, ◇=codex, ○=opencode)
+│ │ └── Type icon (◆=claude, ◇=codex, ○=opencode, π=pi)
 │ └── Status (▶=working, ⏸=idle, ◼=blocked/waiting on user)
 └── Attached session marker
 ```

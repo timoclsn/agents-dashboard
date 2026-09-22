@@ -6,6 +6,7 @@ const TYPE_ICONS: Record<Agent["type"], string> = {
   claude: "◆",
   codex: "◇",
   opencode: "○",
+  pi: "π",
   unknown: "?",
 };
 

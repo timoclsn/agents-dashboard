@@ -8,6 +8,12 @@ import {
 } from "./claude";
 import { detectCodex, detectCodexStatus } from "./codex";
 import { detectOpenCode, detectOpenCodeStatus } from "./opencode";
+import {
+  detectPi,
+  detectPiStatus,
+  parsePiSessionTitle,
+  parsePiContext,
+} from "./pi";
 import type { PaneInfo } from "../tmux/client";
 
 const mockPane = (childCommands: string[]): PaneInfo => ({
@@ -254,6 +260,161 @@ describe("OpenCode", () => {
       expect(detectOpenCodeStatus("△ Permission required\nesc dismiss")).toBe(
         "blocked",
       );
+    });
+  });
+});
+
+describe("Pi", () => {
+  describe("detectPi", () => {
+    test("detects pi in child commands", () => {
+      expect(detectPi(mockPane(["pi"]))).toBe(true);
+      expect(detectPi(mockPane(["pi", "sleep 600"]))).toBe(true);
+      expect(detectPi(mockPane(["/Users/timo/.npm-global/bin/pi"]))).toBe(true);
+      expect(
+        detectPi(
+          mockPane(["node /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"]),
+        ),
+      ).toBe(true);
+    });
+
+    test("detects pi when pane command is pi", () => {
+      const pane = mockPane([]);
+      pane.command = "pi";
+      expect(detectPi(pane)).toBe(true);
+    });
+
+    test("does not false-positive on other commands containing 'pi'", () => {
+      expect(detectPi(mockPane(["copilot-language-server"]))).toBe(false);
+      expect(detectPi(mockPane(["pip install requests"]))).toBe(false);
+      expect(detectPi(mockPane(["gzip archive.tar"]))).toBe(false);
+      expect(detectPi(mockPane(["node", "npm"]))).toBe(false);
+      expect(detectPi(mockPane([]))).toBe(false);
+    });
+  });
+
+  describe("detectPiStatus", () => {
+    test("detects working from braille spinner in title", () => {
+      expect(detectPiStatus("⠋ π - fix auth - agents-dashboard", "")).toBe(
+        "working",
+      );
+      expect(detectPiStatus("⠹ pi - project", "")).toBe("working");
+    });
+
+    test("detects working from editor border indicator", () => {
+      expect(
+        detectPiStatus("π - agents-dashboard", "── ⠹ Working ──────────────────────"),
+      ).toBe("working");
+      expect(
+        detectPiStatus("π - agents-dashboard", "── ⠋ Working... ───────────────────"),
+      ).toBe("working");
+    });
+
+    test("detects working from interrupt or cancel hints", () => {
+      expect(
+        detectPiStatus("π - project", "Working (escape to interrupt)"),
+      ).toBe("working");
+      expect(
+        detectPiStatus("π - project", "Working (esc to interrupt)"),
+      ).toBe("working");
+      expect(
+        detectPiStatus(
+          "π - project",
+          "Retrying (1/3) in 5s... (escape to cancel)",
+        ),
+      ).toBe("working");
+      expect(
+        detectPiStatus("π - project", "Compacting context... (escape to cancel)"),
+      ).toBe("working");
+    });
+
+    test("detects blocked from selector prompts", () => {
+      const content =
+        "Select an option:\n→ Yes\n  No\n↑↓ navigate  enter select  esc cancel";
+      expect(detectPiStatus("π - project", content)).toBe("blocked");
+    });
+
+    test("detects blocked from input prompts", () => {
+      const content = "Enter a name:\nenter submit  esc cancel";
+      expect(detectPiStatus("π - project", content)).toBe("blocked");
+    });
+
+    test("detects blocked from confirmation / approval prompts", () => {
+      expect(
+        detectPiStatus("π - project", "Allow dangerous command?\n[y/n]"),
+      ).toBe("blocked");
+      expect(
+        detectPiStatus("π - project", "Press enter to confirm or esc to cancel"),
+      ).toBe("blocked");
+    });
+
+    test("detects idle when no working or blocked indicator", () => {
+      expect(
+        detectPiStatus(
+          "π - agents-dashboard",
+          "~/Developer/personal/agents-dashboard (main)\n0.0%/1.0M (auto)",
+        ),
+      ).toBe("idle");
+      expect(detectPiStatus("π - agents-dashboard", "")).toBe("idle");
+    });
+  });
+
+  describe("parsePiSessionTitle", () => {
+    test("extracts session name from title", () => {
+      expect(
+        parsePiSessionTitle("π - fix auth bug - agents-dashboard"),
+      ).toBe("fix auth bug");
+      expect(
+        parsePiSessionTitle("pi - refactor store - project"),
+      ).toBe("refactor store");
+    });
+
+    test("strips braille spinner before extracting session name", () => {
+      expect(
+        parsePiSessionTitle("⠋ π - implement feature - repo"),
+      ).toBe("implement feature");
+    });
+
+    test("handles multi-hyphen session names", () => {
+      expect(
+        parsePiSessionTitle("π - part 1 - fix issue - repo"),
+      ).toBe("part 1 - fix issue");
+    });
+
+    test("returns null when title has no session name", () => {
+      expect(parsePiSessionTitle("π - agents-dashboard")).toBe(null);
+      expect(parsePiSessionTitle("pi - my-repo")).toBe(null);
+    });
+
+    test("returns null for non-pi titles", () => {
+      expect(parsePiSessionTitle("timobook")).toBe(null);
+      expect(parsePiSessionTitle("")).toBe(null);
+    });
+
+    test("falls back to footer session name in content", () => {
+      const content =
+        "some output\n~/Developer/personal/agents-dashboard (main) • my custom session\n↑10k ↓2k 5%/1.0M";
+      expect(
+        parsePiSessionTitle("π - agents-dashboard", content),
+      ).toBe("my custom session");
+    });
+  });
+
+  describe("parsePiContext", () => {
+    test("parses context percent from footer usage", () => {
+      expect(
+        parsePiContext(
+          "↑392k ↓13k R3.4M CH89.2% $0.595 21.4%/1.0M (auto) (google) gemini-3.8-flash",
+        ),
+      ).toBe(21);
+      expect(parsePiContext("0.0%/1.0M (auto)")).toBe(0);
+      expect(parsePiContext("85.6%/200k")).toBe(86);
+      expect(parsePiContext("100%/128k")).toBe(100);
+    });
+
+    test("returns null when no context percentage is present", () => {
+      expect(parsePiContext("")).toBe(null);
+      expect(parsePiContext("just some output")).toBe(null);
+      expect(parsePiContext("?/200k (auto)")).toBe(null);
     });
   });
 });

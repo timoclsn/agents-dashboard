@@ -1,6 +1,6 @@
 import type { PaneInfo } from "../tmux/client";
 
-export type AgentType = "claude" | "codex" | "opencode" | "unknown";
+export type AgentType = "claude" | "codex" | "opencode" | "pi" | "unknown";
 export type AgentStatus = "idle" | "working" | "blocked";
 
 // How many characters from the end of pane content to check for status indicators
@@ -29,7 +29,7 @@ export interface Agent {
   gitBranch: string | null;
   sessionTitle: string | null;
   attached: boolean;
-  // Percentage of context window used (Claude only; null otherwise).
+  // Percentage of context window used (Claude and Pi; null otherwise).
   contextPercent: number | null;
 }
 import {
@@ -55,6 +55,12 @@ import {
   detectOpenCodeStatus,
   parseOpenCodeSessionTitle,
 } from "./opencode";
+import {
+  detectPi,
+  detectPiStatus,
+  parsePiSessionTitle,
+  parsePiContext,
+} from "./pi";
 import { scanWorktrees, type Worktree } from "../worktrees/scan";
 
 // Fallback prompt patterns for all agents
@@ -88,6 +94,9 @@ const parseSessionTitle = ({
   if (agentType === "opencode") {
     return parseOpenCodeSessionTitle(topContent);
   }
+  if (agentType === "pi") {
+    return parsePiSessionTitle(pane.title, content);
+  }
   return null;
 };
 
@@ -95,6 +104,7 @@ const detectAgentType = (pane: PaneInfo): AgentType | null => {
   if (detectClaude(pane)) return "claude";
   if (detectCodex(pane)) return "codex";
   if (detectOpenCode(pane)) return "opencode";
+  if (detectPi(pane)) return "pi";
   return null;
 };
 
@@ -112,6 +122,9 @@ const detectStatus = (
   }
   if (agentType === "opencode") {
     return detectOpenCodeStatus(content);
+  }
+  if (agentType === "pi") {
+    return detectPiStatus(pane.title, content);
   }
 
   // Fallback: check for prompt patterns
@@ -183,7 +196,11 @@ const buildAgents = async (panes: PaneInfo[]): Promise<Agent[]> => {
       sessionTitle: parseSessionTitle({ pane, content, topContent, agentType }),
       attached: pane.attached,
       contextPercent:
-        agentType === "claude" ? parseClaudeContext(content) : null,
+        agentType === "claude"
+          ? parseClaudeContext(content)
+          : agentType === "pi"
+            ? parsePiContext(content)
+            : null,
     });
   }
 

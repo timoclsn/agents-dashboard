@@ -91,6 +91,7 @@ const TYPE_ICONS: Record<Agent["type"], string> = {
   claude: "◆",
   codex: "◇",
   opencode: "○",
+  pi: "π",
   unknown: "?",
 };
 
@@ -412,7 +413,7 @@ const EmptyState = () => (
     <box style={{ flexDirection: "row", height: 1, marginTop: 1 }}>
       <text style={{ fg: COLORS.borderDim }}>└ </text>
       <text style={{ fg: COLORS.faint }}>
-        start claude, codex, or opencode in tmux
+        start claude, codex, opencode, or pi in tmux
       </text>
     </box>
   </box>
