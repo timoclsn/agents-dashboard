@@ -83,10 +83,12 @@ region. Content scanning remains a fallback.
 
 **Claude** (`#{pane_title}` = `<glyph> <task>`, e.g. `⠋ Refactor auth`):
 
-- **Working**: leading braille spinner glyph (U+2800–U+28FF) in title
+- **Working**: leading braille spinner glyph (U+2800–U+28FF) in title (older
+  versions only), or content spinner (`· Scampering…`, `· Fiddle-faddling…`,
+  `Running…`) → working
 - **Blocked**: permission prompt (`Do you want to…` + `Yes`/`❯`) in bottom lines
-- **Idle**: leading `✳` (U+2733) glyph in title
-- Fallback: content spinner (`· Scampering…`, `Running…`) → working, else idle
+- **Idle**: everything else. Note: newer Claude Code keeps the `✳` (U+2733)
+  title glyph even while working, so `✳` is **not** an idle signal.
 - **Title**: strip the leading glyph from `#{pane_title}`; `✳ Claude Code`
   (the default, no task) → `null`. When null, fall back to the session name Claude
   prints as the statusline's trailing ` | <session>` field

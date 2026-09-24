@@ -85,9 +85,12 @@ describe("Claude", () => {
       expect(detectClaudeStatus("⠂ Improve detection", "")).toBe("working");
     });
 
-    test("detects idle from ✳ glyph in title", () => {
+    test("✳ title glyph defers to content (newer Claude keeps it while working)", () => {
       expect(detectClaudeStatus("✳ Claude Code", "")).toBe("idle");
-      expect(detectClaudeStatus("✳ Refactor auth", "")).toBe("idle");
+      expect(detectClaudeStatus("✳ Refactor auth", "✻ Worked for 24s\n❯ ")).toBe("idle");
+      expect(
+        detectClaudeStatus("✳ Refactor auth", "· Fiddle-faddling… (24s · ↓ 986 tokens)\n❯ "),
+      ).toBe("working");
     });
 
     test("title spinner beats stale prompt in scrollback", () => {

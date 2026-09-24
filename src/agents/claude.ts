@@ -6,11 +6,11 @@ import {
 } from "./detect";
 
 // Claude Code sets the terminal title (exposed by tmux as #{pane_title}) to
-// encode both its state and the current task, e.g. "⠋ Refactor auth" while
-// working, "✳ Refactor auth" when idle. The leading glyph is a braille spinner
-// (U+2800–U+28FF) while working and ✳ (U+2733) when idle.
+// encode the current task behind a state glyph, e.g. "✳ Refactor auth". Older
+// versions animated a braille spinner (U+2800–U+28FF) there while working; newer
+// ones keep ✳ (U+2733) even mid-turn, so ✳ says nothing about idleness and only
+// a spinner is a trustworthy title signal.
 const TITLE_WORKING = /^[⠀-⣿]\s/;
-const TITLE_IDLE = /^✳\s/;
 const TITLE_GLYPH = /^[⠀-⣿✳]\s+/;
 const DEFAULT_TITLE = "Claude Code";
 
@@ -20,7 +20,7 @@ const DEFAULT_TITLE = "Claude Code";
 const BLOCKED = /^\s*❯?\s*1\.\s*yes\b/im;
 
 // Fallback content scan for when the title carries no state glyph.
-const WORKING = /[·✢✳✶✻✽*]\s*\w+…|Running…/;
+const WORKING = /[·✢✳✶✻✽*]\s*[\w-]+…|Running…/;
 
 export const detectClaude = (pane: PaneInfo): boolean => {
   const childCmdsLower = pane.childCommands
@@ -37,7 +37,6 @@ export const detectClaudeStatus = (
   // prompt-like text left in the scrollback.
   if (TITLE_WORKING.test(title)) return "working";
   if (BLOCKED.test(bottomNonEmptyLines(content, 8))) return "blocked";
-  if (TITLE_IDLE.test(title)) return "idle";
   return WORKING.test(content.slice(-STATUS_SCAN_CHARS)) ? "working" : "idle";
 };
 
